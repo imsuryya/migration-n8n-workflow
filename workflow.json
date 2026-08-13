@@ -1,0 +1,2808 @@
+{
+  "name": "89595",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "compare-needed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "d01e7d61-3a73-4781-9ca2-f287371a637b",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "STOPPED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -41664,
+        4800
+      ],
+      "id": "1eed74e8-ea0c-4d0e-991f-9cba073305ec",
+      "name": "Compare Needed?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/compare",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"case_sensitive\": false,\n  \"compare_duplicates\": true,\n  \"compare_schema\": true,\n  \"compare_values\": true,\n  \"ignore_columns\": [],\n  \"numeric_tolerance\": 0.01,\n  \"primary_keys\": [\"Numeric\"],\n  \"sample_size\": 20,\n  \"source_platform\": \"azure_storage\",\n  \"source_table\": \"n8ndirectory/day.csv\",\n  \"target_platform\": \"databricks\",\n  \"target_table\": \"for_n8n_catalog.for_n8n_scheme.day\",\n  \"trim_strings\": true\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -41344,
+        4784
+      ],
+      "id": "f3a09bc9-fe17-496e-837d-6bac96cc6df1",
+      "name": "Call Table Compare"
+    },
+    {
+      "parameters": {
+        "jsCode": "const report = $('Build Final Report1').item.json;\nconst resp = $json;\nconst isValidComparisonResult = resp && typeof resp.status === 'string' && ['PASS', 'WARN', 'FAIL'].includes(resp.status);\nreturn [{\n  json: {\n    ...report,\n    compare_result: isValidComparisonResult ? resp : null,\n    compare_call_failed: !isValidComparisonResult,\n    compare_call_error: !isValidComparisonResult\n      ? (resp && (resp.error || resp.message || JSON.stringify(resp))) || 'Unknown error calling the table comparison service'\n      : null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -41008,
+        4784
+      ],
+      "id": "146afaa5-394a-46e2-a969-d32b86920841",
+      "name": "Carry State After Compare"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "compare-call-ok",
+              "leftValue": "={{ $json.compare_call_failed }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -40640,
+        4784
+      ],
+      "id": "040f142c-1621-4c93-9b39-1ebb2d6e305e",
+      "name": "Compare Call Succeeded?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "compare-passed",
+              "leftValue": "={{ $json.compare_result.status }}",
+              "rightValue": "PASS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -40080,
+        4592
+      ],
+      "id": "c0206085-deca-4cd4-8410-81f6eb7fcf59",
+      "name": "Compare Passed?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cmp = $json.compare_result || {};\nlet cleanedCode = '';\ntry { cleanedCode = $('Base64 Encode').item.json.cleaned_code || ''; } catch (e) { cleanedCode = ''; }\n\nreturn [{\n  json: {\n    ...$json,\n    cleaned_code: cleanedCode,\n    repair_cycle: $json.repair_cycles_used || 0,\n    repair_reason: 'table_validation_gap',\n    repair_detail: `Post-run table comparison returned ${cmp.status}. row_count_source=${cmp.row_count_source}, row_count_target=${cmp.row_count_target}, matched_rows=${cmp.matched_rows}, missing_rows=${cmp.missing_rows}, extra_rows=${cmp.extra_rows}, schema_match=${cmp.schema_match}. column_differences=${JSON.stringify(cmp.column_differences || [])}. sample_mismatches=${JSON.stringify(cmp.sample_mismatches || [])}. duplicate_rows=${JSON.stringify(cmp.duplicate_rows || {})}`,\n    failure_pattern: 'Table Validation Mismatch'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40080,
+        5024
+      ],
+      "id": "3cee224b-dfbf-45c3-a49c-da7c6a09fe6d",
+      "name": "Prep Table Validation Repair"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "table-validation-cap",
+              "leftValue": "={{ $json.repair_cycle || 0 }}",
+              "rightValue": 8,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -39712,
+        5024
+      ],
+      "id": "9ff6bd32-ea4c-4173-9b5f-252327532393",
+      "name": "Table Validation Cap Check"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cmp = $json.compare_result;\nconst failed = $json.compare_call_failed === true;\nconst repairCycles = $json.repair_cycle != null ? $json.repair_cycle : ($json.repair_cycles_used || 0);\n\nconst report = { ...$json };\ndelete report.compare_result;\ndelete report.compare_call_failed;\ndelete report.compare_call_error;\ndelete report.cleaned_code;\ndelete report.repair_detail;\ndelete report.repair_reason;\ndelete report.failure_pattern;\n\nlet tableValidation;\nif (failed) {\n  tableValidation = {\n    status: 'UNAVAILABLE',\n    note: 'Could not reach the table comparison service: ' + ($json.compare_call_error || 'unknown connection error'),\n    repair_cycles_used: repairCycles\n  };\n} else {\n  tableValidation = {\n    status: cmp ? cmp.status : 'UNKNOWN',\n    row_count_source: cmp ? cmp.row_count_source : null,\n    row_count_target: cmp ? cmp.row_count_target : null,\n    matched_rows: cmp ? cmp.matched_rows : null,\n    missing_rows: cmp ? cmp.missing_rows : null,\n    extra_rows: cmp ? cmp.extra_rows : null,\n    schema_match: cmp ? cmp.schema_match : null,\n    column_differences: cmp ? cmp.column_differences : [],\n    sample_mismatches: cmp ? cmp.sample_mismatches : [],\n    repair_cycles_used: repairCycles\n  };\n}\n\nreturn [{ json: { ...report, table_validation: tableValidation } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -39440,
+        4816
+      ],
+      "id": "2964e889-1659-46bb-9034-f5ab05731f32",
+      "name": "Finalize Table Validation"
+    },
+    {
+      "parameters": {
+        "formTitle": "Customer Migration (Validation Notebook)",
+        "formDescription": "Upload an Alteryx .yxmd workflow OR an Azure Data Factory pipeline/mapping-dataflow .json export -> generate & validate a single Databricks notebook",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Project Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Workflow File",
+              "fieldType": "file",
+              "multipleFiles": false,
+              "acceptFileTypes": ".yxmd,.json",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Additional Information",
+              "fieldType": "textarea"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.6,
+      "position": [
+        -53728,
+        5456
+      ],
+      "id": "d9fbb5b2-cc8c-4964-b48b-38667e5f5f6f",
+      "name": "On form submission1",
+      "webhookId": "7c1d86a4-160a-4fb9-a930-e53e08901072"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst fileKey = Object.keys(item.binary || {})[0];\nif (!fileKey) throw new Error('No uploaded file found on the form submission');\nconst binaryData = await this.helpers.getBinaryDataBuffer(0, fileKey);\nconst rawText = binaryData.toString('utf8');\nconst trimmed = rawText.trim();\n\nlet sourceFormat = 'unknown';\nif (trimmed.startsWith('<')) {\n  sourceFormat = 'alteryx_yxmd';\n} else {\n  let parsed = null;\n  try { parsed = JSON.parse(trimmed); } catch (e) { parsed = null; }\n  if (parsed) {\n    const looksLikeAdfPipeline = !!(parsed.properties && Array.isArray(parsed.properties.activities));\n    const looksLikeAdfDataFlow = !!(parsed.properties && (parsed.properties.type === 'MappingDataFlow' ||\n      (parsed.properties.typeProperties && Array.isArray(parsed.properties.typeProperties.transformations))));\n    const looksLikeAdfArmExport = Array.isArray(parsed.resources) &&\n      parsed.resources.some(r => typeof r.type === 'string' && r.type.toLowerCase().includes('datafactory'));\n    sourceFormat = (looksLikeAdfPipeline || looksLikeAdfDataFlow || looksLikeAdfArmExport) ? 'adf_json' : 'unknown_json';\n  }\n}\nif (sourceFormat === 'unknown' || sourceFormat === 'unknown_json') {\n  throw new Error('Unrecognized workflow file: expected an Alteryx .yxmd (XML) or an Azure Data Factory pipeline/dataflow export (.json)');\n}\n\nreturn [{\n  json: {\n    project_name: item.json['Project Name'],\n    filename: item.binary[fileKey].fileName,\n    source_format: sourceFormat,\n    source_content: rawText,\n    additional_info: item.json['Additional Information'] || item.json['additional information'] || '',\n    repair_cycle: 0\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -53264,
+        5456
+      ],
+      "id": "53a8ae73-a9e9-4ee9-a41f-c88c27c5680e",
+      "name": "Extract YXMD"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === Production Alteryx/ADF Parser (Canonical IR) ===\nfunction parseAlteryxYXMD(xmlString, project_name, filename) {\n  const workflow = {\n    project_name: project_name,\n    filename: filename,\n    workflow_name: 'Unnamed Workflow',\n    tool_count: 0,\n    tools: [],\n    connections: [],\n    inputs: [],\n    outputs: [],\n    filters: [],\n    formulas: [],\n    sorts: [],\n    joins: [],\n    unions: [],\n    aggregations: [],\n    macros: [],\n    execution_flow: [],\n    execution_steps: [],\n    dependency_graph: {},\n    business_logic_candidates: []\n  };\n\n  function getAttrs(tagStr) {\n    const attrs = {};\n    if (!tagStr) return attrs;\n    const attrRegex = /([\\w:-]+)\\s*=\\s*\"([^\"]*)\"/g;\n    let m;\n    while ((m = attrRegex.exec(tagStr)) !== null) attrs[m[1]] = m[2];\n    return attrs;\n  }\n  function getTags(xml, tagName) {\n    const results = [];\n    if (!xml) return results;\n    const regex = new RegExp('<' + tagName + '\\\\b([^>]*?)(?:/>|>([\\\\s\\\\S]*?)</' + tagName + '>)', 'gi');\n    let m;\n    while ((m = regex.exec(xml)) !== null) {\n      results.push({ attrs: getAttrs(m[1]), inner: m[2] !== undefined ? m[2].trim() : '' });\n    }\n    return results;\n  }\n  function getTagText(xml, tagName) {\n    if (!xml) return '';\n    const m = xml.match(new RegExp('<' + tagName + '\\\\b[^>]*>([\\\\s\\\\S]*?)</' + tagName + '>', 'i'));\n    return m ? m[1].trim() : '';\n  }\n  function decodeXmlEntities(str) {\n    if (!str) return str;\n    return str.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'\"').replace(/&apos;/g,\"'\").replace(/&amp;/g,'&');\n  }\n  function splitFilePath(raw) {\n    if (!raw) return { path: '', extra: '' };\n    const parts = raw.split('|||');\n    return { path: parts[0] ? parts[0].trim() : '', extra: parts[1] ? parts[1].trim() : '' };\n  }\n\n  const nameMatch = xmlString.match(/<Name>([^<]+)<\\/Name>/i);\n  if (nameMatch) workflow.workflow_name = decodeXmlEntities(nameMatch[1].trim());\n\n  function parseFormula(c) {\n    const out = [];\n    const fields = getTags(getTagText(c,'FormulaFields') || c, 'FormulaField');\n    fields.forEach(f => out.push({ field: f.attrs.field || '', expression: decodeXmlEntities(f.attrs.expression || '') }));\n    return out;\n  }\n  function parseMultiFieldFormula(c) {\n    const expression = decodeXmlEntities(getTagText(c,'Expression'));\n    const fields = getTags(getTagText(c,'Fields') || c, 'Field').map(f => f.attrs.field).filter(Boolean);\n    return fields.map(field => ({ field, expression }));\n  }\n  function parseMultiRowFormula(c) {\n    const field = getTagText(c,'Field');\n    const expression = decodeXmlEntities(getTagText(c,'Expression'));\n    if (!field && !expression) return [];\n    return [{ field, expression }];\n  }\n  function parseFilter(c) {\n    let condition = decodeXmlEntities(getTagText(c,'Expression'));\n    if (!condition) {\n      const m = c.match(/(?:Expression|Filter)=\"([^\"]+)\"/i);\n      if (m) condition = decodeXmlEntities(m[1]);\n    }\n    return condition;\n  }\n  function parseSort(c) {\n    const cols = getTags(getTagText(c,'SortInfo') || c, 'Field').map(f => ({ field: f.attrs.field || '', order: f.attrs.order || '' }));\n    return cols;\n  }\n  function parseJoin(c) {\n    const joinInfos = getTags(c, 'JoinInfo');\n    const leftInfo = joinInfos.find(j => (j.attrs.connection || '').toLowerCase() === 'left');\n    const rightInfo = joinInfos.find(j => (j.attrs.connection || '').toLowerCase() === 'right');\n    const leftFields = leftInfo ? getTags(leftInfo.inner, 'Field').map(f => f.attrs.field || '') : [];\n    const rightFields = rightInfo ? getTags(rightInfo.inner, 'Field').map(f => f.attrs.field || '') : [];\n    const joinKeys = leftFields.map((left, i) => ({ left, right: rightFields[i] || '' }));\n    let joinType = 'Inner';\n    const explicit = c.match(/JoinType=\"([^\"]+)\"/i);\n    if (explicit) joinType = explicit[1];\n    return { join_type: joinType, join_keys: joinKeys };\n  }\n  function parseSummarize(c) {\n    const fields = getTags(getTagText(c,'SummarizeFields') || c, 'SummarizeField');\n    const groupBy = [], aggregations = [];\n    fields.forEach(f => {\n      const action = f.attrs.action || '', field = f.attrs.field || '';\n      if (action.toLowerCase() === 'groupby') groupBy.push(field);\n      else aggregations.push({ action, field });\n    });\n    return { group_by: groupBy, aggregations };\n  }\n  function parseInput(c) {\n    const fileRaw = getTagText(c,'File');\n    const { path: filePath, extra: fileExtra } = splitFilePath(fileRaw);\n    const query = getTagText(c,'QueryString') || (c.match(/Query=\"([^\"]+)\"/i) || [])[1] || '';\n    const connectionName = getTagText(c,'Connection') || (c.match(/Connection=\"([^\"]+)\"/i) || [])[1] || '';\n    const tableAttr = (c.match(/Table=\"([^\"]+)\"/i) || [])[1] || '';\n    let sourceType = 'unknown';\n    if (filePath) sourceType = 'file';\n    if (query || connectionName) sourceType = 'database';\n    return { source_type: sourceType, file_path: filePath, table: tableAttr || fileExtra || '', query: decodeXmlEntities(query), connection_name: connectionName };\n  }\n  function parseOutput(c) {\n    const fileRaw = getTagText(c,'File');\n    const { path: filePath, extra: fileExtra } = splitFilePath(fileRaw);\n    const tableAttr = (c.match(/Table=\"([^\"]+)\"/i) || [])[1] || '';\n    const targetType = filePath ? 'file' : (tableAttr || fileExtra ? 'database' : 'unknown');\n    return { target_type: targetType, file_path: filePath, table_name: tableAttr || fileExtra || '' };\n  }\n\n  const nodeRegex = /<Node\\s+ToolID=\"([^\"]+)\"[^>]*>([\\s\\S]*?)<\\/Node>/gi;\n  let nodeMatch;\n  const toolMap = new Map();\n  while ((nodeMatch = nodeRegex.exec(xmlString)) !== null) {\n    const toolId = nodeMatch[1];\n    const nodeInner = nodeMatch[2];\n    const pluginMatch = nodeInner.match(/<GuiSettings[^>]*Plugin=\"([^\"]+)\"/i);\n    const plugin = pluginMatch ? pluginMatch[1] : '';\n    const configMatch = nodeInner.match(/<Configuration>([\\s\\S]*?)<\\/Configuration>/i);\n    const configInner = configMatch ? configMatch[1] : '';\n    const macroMatch = nodeInner.match(/<EngineSettings[^>]*Macro=\"([^\"]*)\"/i);\n    const macroName = macroMatch ? macroMatch[1] : '';\n    const toolTypeRaw = (plugin.split('.').pop() || 'Unknown').trim() || 'Unknown';\n    if (['Browse','BrowseV2','ToolContainer','Comment','TextBox'].some(t => toolTypeRaw.includes(t))) continue;\n\n    const lowerType = toolTypeRaw.toLowerCase();\n    let toolCategory = 'transformation';\n    if (plugin.includes('Input') || plugin.includes('DbFileInput') || plugin.includes('TextInput')) toolCategory = 'input';\n    else if (plugin.includes('Output') || plugin.includes('DbFileOutput')) toolCategory = 'output';\n    else if (lowerType.includes('filter')) toolCategory = 'filter';\n    else if (lowerType === 'multirowformula') toolCategory = 'multirowformula';\n    else if (lowerType === 'multifieldformula') toolCategory = 'multifieldformula';\n    else if (lowerType.includes('formula')) toolCategory = 'formula';\n    else if (lowerType.includes('join')) toolCategory = 'join';\n    else if (lowerType.includes('union')) toolCategory = 'union';\n    else if (lowerType.includes('summarize')) toolCategory = 'aggregation';\n    else if (lowerType.includes('sort')) toolCategory = 'sort';\n    else if (macroName) toolCategory = 'macro';\n\n    const tool = { tool_id: toolId, plugin, tool_type: toolTypeRaw, tool_category: toolCategory, configuration_summary: {}, business_description: '' };\n    if (macroName) workflow.macros.push({ tool_id: toolId, macro_name: macroName });\n\n    if (toolCategory === 'input') {\n      const parsed = parseInput(configInner);\n      workflow.inputs.push(Object.assign({ tool_id: toolId }, parsed));\n      tool.configuration_summary = parsed;\n      tool.business_description = `Read source data from ${parsed.file_path || parsed.table || parsed.connection_name || 'unknown source'}`;\n    } else if (toolCategory === 'output') {\n      const parsed = parseOutput(configInner);\n      workflow.outputs.push(Object.assign({ tool_id: toolId }, parsed));\n      tool.configuration_summary = parsed;\n      tool.business_description = `Write output data to ${parsed.file_path || parsed.table_name || 'unknown target'}`;\n    } else if (toolCategory === 'filter') {\n      const condition = parseFilter(configInner);\n      workflow.filters.push({ tool_id: toolId, condition });\n      tool.configuration_summary = { condition };\n      tool.business_description = condition ? `Filter records where ${condition}` : 'Filter records (condition not detected)';\n    } else if (toolCategory === 'formula' || toolCategory === 'multifieldformula' || toolCategory === 'multirowformula') {\n      let fields = [];\n      if (toolCategory === 'formula') fields = parseFormula(configInner);\n      else if (toolCategory === 'multifieldformula') fields = parseMultiFieldFormula(configInner);\n      else fields = parseMultiRowFormula(configInner);\n      fields.forEach(f => workflow.formulas.push({ tool_id: toolId, field: f.field, expression: f.expression }));\n      tool.configuration_summary = { fields };\n      tool.business_description = fields.length === 1 ? `Calculate ${fields[0].field} using formula: ${fields[0].expression}` : (fields.length > 1 ? `Calculate fields (${fields.map(f=>f.field).join(', ')})` : 'Apply formula');\n    } else if (toolCategory === 'sort') {\n      const columns = parseSort(configInner);\n      workflow.sorts.push({ tool_id: toolId, columns });\n      tool.configuration_summary = { columns };\n      tool.business_description = columns.length ? `Sort data by ${columns.map(c=>`${c.field} ${c.order}`).join(', ')}` : 'Sort data';\n    } else if (toolCategory === 'join') {\n      const { join_type, join_keys } = parseJoin(configInner);\n      workflow.joins.push({ tool_id: toolId, join_type, join_keys });\n      tool.configuration_summary = { join_type, join_keys };\n      tool.business_description = join_keys.length ? `Join datasets on ${join_keys.map(k=>`${k.left}=${k.right}`).join(', ')} (${join_type})` : `Join datasets (${join_type})`;\n    } else if (toolCategory === 'aggregation') {\n      const { group_by, aggregations } = parseSummarize(configInner);\n      workflow.aggregations.push({ tool_id: toolId, group_by, aggregations });\n      tool.configuration_summary = { group_by, aggregations };\n      tool.business_description = `Group by ${group_by.join(', ') || '(none)'} and aggregate: ${aggregations.map(a=>`${a.action}(${a.field})`).join(', ') || '(none)'}`;\n    } else if (toolCategory === 'union') {\n      tool.business_description = 'Union multiple datasets';\n    } else if (toolCategory === 'macro') {\n      tool.business_description = `Run macro: ${macroName}`;\n    } else {\n      tool.business_description = `Process data with ${toolTypeRaw}`;\n    }\n    workflow.tools.push(tool);\n    toolMap.set(toolId, tool);\n  }\n  workflow.tool_count = workflow.tools.length;\n\n  const connRegex = /<Connection>[\\s\\S]*?<Origin\\s+ToolID=\"([^\"]+)\"[^>]*\\/?>[\\s\\S]*?<Destination\\s+ToolID=\"([^\"]+)\"[^>]*\\/?>[\\s\\S]*?<\\/Connection>/gi;\n  let connMatch;\n  const graph = {};\n  while ((connMatch = connRegex.exec(xmlString)) !== null) {\n    const from = connMatch[1], to = connMatch[2];\n    workflow.connections.push({ from_tool: from, to_tool: to });\n    if (!graph[from]) graph[from] = [];\n    graph[from].push(to);\n  }\n  workflow.dependency_graph = graph;\n\n  const visited = new Set();\n  const flow = [], steps = [];\n  function traverse(toolId, stepNum) {\n    if (visited.has(toolId)) return;\n    visited.add(toolId);\n    const tool = toolMap.get(toolId);\n    if (tool) { flow.push(tool.tool_type); steps.push({ step: stepNum, tool_id: toolId, tool_type: tool.tool_type }); }\n    (graph[toolId] || []).forEach(nextId => traverse(nextId, stepNum + 1));\n  }\n  workflow.inputs.forEach((inp, idx) => traverse(inp.tool_id, idx + 1));\n  workflow.tools.forEach((t, idx) => traverse(t.tool_id, workflow.inputs.length + idx + 1));\n  workflow.execution_flow = flow;\n  workflow.execution_steps = steps;\n  workflow.business_logic_candidates = steps.map(s => {\n    const tool = toolMap.get(s.tool_id);\n    return (tool && tool.business_description) ? `${tool.business_description} (${s.tool_type})` : `Process data with ${s.tool_type}`;\n  });\n\n  return workflow;\n}\n\nfunction parseADFJson(rawContent, project_name, filename) {\n  const root = JSON.parse(rawContent);\n\n  // ARM deployment templates often name resources via \"[concat(parameters('factoryName'), '/PipelineName')]\"\n  // instead of a literal string. Pull the trailing literal path segment out of that expression when present.\n  function cleanArmName(raw, fallback) {\n    if (!raw || typeof raw !== 'string') return fallback;\n    const concatMatch = raw.match(/\\/([\\w-]+)'\\)\\s*\\]?\\s*$/);\n    if (concatMatch) return concatMatch[1];\n    if (/^\\s*\\[/.test(raw)) return fallback;\n    return raw.split('/').pop();\n  }\n\n  function unwrapResource(root) {\n    if (root.properties && Array.isArray(root.properties.activities)) {\n      return { kind: 'pipeline', name: root.name || 'UnnamedPipeline', properties: root.properties };\n    }\n    if (root.properties && (root.properties.type === 'MappingDataFlow' ||\n        (root.properties.typeProperties && Array.isArray(root.properties.typeProperties.transformations)))) {\n      return { kind: 'dataflow', name: root.name || 'UnnamedDataFlow', properties: root.properties };\n    }\n    if (Array.isArray(root.resources)) {\n      const pipelineRes = root.resources.find(r => typeof r.type === 'string' && r.type.toLowerCase().includes('/pipelines'));\n      if (pipelineRes) return { kind: 'pipeline', name: cleanArmName(pipelineRes.name, 'UnnamedPipeline'), properties: pipelineRes.properties };\n      const dataflowRes = root.resources.find(r => typeof r.type === 'string' && r.type.toLowerCase().includes('/dataflows'));\n      if (dataflowRes) return { kind: 'dataflow', name: cleanArmName(dataflowRes.name, 'UnnamedDataFlow'), properties: dataflowRes.properties };\n    }\n    throw new Error('Unrecognized ADF JSON: expected a pipeline export (properties.activities) or a mapping data flow export (properties.typeProperties.transformations)');\n  }\n\n  const resource = unwrapResource(root);\n\n  // ARM deployment templates commonly parameterize activity config via \"[parameters('X')]\" / \"[variables('X')]\" /\n  // \"[concat(...)]\" expressions that have no real value until the template is deployed. Collect every such\n  // placeholder found anywhere in this resource so the Generator/Repair agents can be told explicitly not to\n  // treat them as literal data (see the ARM-template rule in the Generator/Repair system prompts).\n  const armPlaceholders = new Set();\n  function collectArmPlaceholders(value) {\n    if (typeof value === 'string') {\n      if (/^\\s*\\[(parameters|variables|concat|resourceId|deployment|pipeline)\\(/i.test(value)) armPlaceholders.add(value);\n    } else if (Array.isArray(value)) {\n      value.forEach(collectArmPlaceholders);\n    } else if (value && typeof value === 'object') {\n      Object.values(value).forEach(collectArmPlaceholders);\n    }\n  }\n  collectArmPlaceholders(resource.properties);\n\n  const workflow = {\n    project_name, filename,\n    workflow_name: resource.name,\n    tool_count: 0, tools: [], connections: [], inputs: [], outputs: [],\n    filters: [], formulas: [], sorts: [], joins: [], unions: [], aggregations: [],\n    macros: [], execution_flow: [], execution_steps: [], dependency_graph: {},\n    business_logic_candidates: []\n  };\n\n  const toolMap = new Map();\n\n  function refName(ref) {\n    if (!ref) return '';\n    return ref.referenceName || ref.name || '';\n  }\n\n  if (resource.kind === 'pipeline') {\n    const activities = resource.properties.activities || [];\n\n    // Container activities (ForEach/Until/IfCondition/Switch) hold their real work in a NESTED activities\n    // array/object rather than the top-level activities list. Recurse into them so e.g. a Copy activity buried\n    // inside a ForEach loop becomes its own first-class tool_id instead of invisible JSON inside the loop's\n    // configuration_summary (which is exactly what a plain single-level scan would miss).\n    function processActivity(act, containerId) {\n      const toolId = act.name;\n      const type = act.type || 'Unknown';\n      const lowerType = type.toLowerCase();\n      let toolCategory = 'transformation';\n      let businessDescription = `Execute ${type} activity`;\n      const tp = act.typeProperties || {};\n\n      if (lowerType === 'copy') {\n        toolCategory = 'input';\n        const sourceType = (tp.source && typeof tp.source === 'object' && tp.source.type) || 'unknown';\n        const inputNames = (act.inputs || []).map(refName).join(', ');\n        const outputNames = (act.outputs || []).map(refName).join(', ');\n        workflow.inputs.push({ tool_id: toolId, source_type: 'dataset', file_path: '', table: inputNames, query: '', connection_name: sourceType });\n        workflow.outputs.push({ tool_id: toolId, target_type: 'dataset', file_path: '', table_name: outputNames });\n        businessDescription = `Copy data from ${inputNames || 'source dataset'} to ${outputNames || 'sink dataset'}`;\n      } else if (lowerType === 'lookup') {\n        toolCategory = 'input';\n        const ds = tp.dataset;\n        const inputNames = ds ? refName(ds) : '';\n        workflow.inputs.push({ tool_id: toolId, source_type: 'lookup', file_path: '', table: inputNames,\n          query: (tp.source && typeof tp.source === 'object' && tp.source.query) || '', connection_name: '' });\n        businessDescription = `Lookup reference data from ${inputNames || 'dataset'}`;\n      } else if (lowerType === 'filter') {\n        toolCategory = 'filter';\n        const condition = (tp.condition && tp.condition.value) || '';\n        workflow.filters.push({ tool_id: toolId, condition });\n        businessDescription = condition ? `Filter records where ${condition}` : 'Filter records (condition not detected)';\n      } else if (lowerType === 'executedataflow') {\n        toolCategory = 'macro';\n        const dfRef = tp.dataFlow;\n        const dfName = dfRef ? refName(dfRef) : '';\n        workflow.macros.push({ tool_id: toolId, macro_name: dfName });\n        businessDescription = `Execute mapping data flow: ${dfName}`;\n      } else if (lowerType === 'sort') {\n        toolCategory = 'sort';\n        businessDescription = 'Sort data';\n      } else if (lowerType === 'setvariable' || lowerType === 'appendvariable') {\n        toolCategory = 'transformation';\n        businessDescription = `Set pipeline variable ${tp.variableName || ''}`;\n      } else if (lowerType === 'foreach') {\n        toolCategory = 'transformation';\n        const itemsExpr = (tp.items && tp.items.value) || '';\n        businessDescription = `Loop over items from: ${itemsExpr || '(unknown items expression)'}${tp.batchCount ? ` (batch size ${tp.batchCount})` : ''} — execute the nested activities once per item`;\n      } else if (lowerType === 'until') {\n        toolCategory = 'transformation';\n        const expr = (tp.expression && tp.expression.value) || '';\n        businessDescription = `Repeat nested activities until: ${expr || '(unknown condition)'}`;\n      } else if (lowerType === 'ifcondition') {\n        toolCategory = 'transformation';\n        const expr = (tp.expression && tp.expression.value) || '';\n        businessDescription = `Branch on condition: ${expr || '(unknown condition)'} — different nested activities run for true/false`;\n      } else if (lowerType === 'switch') {\n        toolCategory = 'transformation';\n        const expr = (tp.on && tp.on.value) || '';\n        businessDescription = `Switch on: ${expr || '(unknown expression)'} — different nested activities run per case`;\n      } else {\n        businessDescription = `Execute ${type} activity`;\n      }\n\n      // Exclude nested-activity arrays from configuration_summary: they're extracted as their own tools below,\n      // and leaving the raw nested JSON in here just re-leaks it (with any ARM placeholders) into the LLM prompt.\n      const configSummary = Object.assign({}, tp);\n      delete configSummary.activities;\n      delete configSummary.ifTrueActivities;\n      delete configSummary.ifFalseActivities;\n      delete configSummary.cases;\n      delete configSummary.defaultActivities;\n\n      const tool = { tool_id: toolId, plugin: `ADF.${type}`, tool_type: type, tool_category: toolCategory,\n        configuration_summary: configSummary, business_description: businessDescription };\n      workflow.tools.push(tool);\n      toolMap.set(toolId, tool);\n\n      if (containerId) workflow.connections.push({ from_tool: containerId, to_tool: toolId });\n      (act.dependsOn || []).forEach(dep => {\n        workflow.connections.push({ from_tool: dep.activity, to_tool: toolId });\n      });\n\n      const nestedGroups = [];\n      if (lowerType === 'foreach' || lowerType === 'until') {\n        if (Array.isArray(tp.activities)) nestedGroups.push(tp.activities);\n      } else if (lowerType === 'ifcondition') {\n        if (Array.isArray(tp.ifTrueActivities)) nestedGroups.push(tp.ifTrueActivities);\n        if (Array.isArray(tp.ifFalseActivities)) nestedGroups.push(tp.ifFalseActivities);\n      } else if (lowerType === 'switch') {\n        (tp.cases || []).forEach(c => { if (Array.isArray(c.activities)) nestedGroups.push(c.activities); });\n        if (Array.isArray(tp.defaultActivities)) nestedGroups.push(tp.defaultActivities);\n      }\n      nestedGroups.forEach(group => group.forEach(nestedAct => processActivity(nestedAct, toolId)));\n    }\n\n    activities.forEach(act => processActivity(act, null));\n  } else {\n    const tp = resource.properties.typeProperties || {};\n    const declaredTransforms = tp.transformations || [];\n    const script = tp.script || '';\n\n    declaredTransforms.forEach(t => {\n      toolMap.set(t.name, { tool_id: t.name, plugin: 'ADF.DataFlowTransformation', tool_type: 'Unknown',\n        tool_category: 'transformation', configuration_summary: {}, business_description: `Process data with ${t.name}` });\n    });\n    (tp.sources || []).forEach(s => {\n      if (!toolMap.has(s.name)) toolMap.set(s.name, { tool_id: s.name, plugin: 'ADF.Source', tool_type: 'Source',\n        tool_category: 'input', configuration_summary: {}, business_description: `Read source data from ${s.name}` });\n    });\n    (tp.sinks || []).forEach(s => {\n      if (!toolMap.has(s.name)) toolMap.set(s.name, { tool_id: s.name, plugin: 'ADF.Sink', tool_type: 'Sink',\n        tool_category: 'output', configuration_summary: {}, business_description: `Write output data to ${s.name}` });\n    });\n\n    function extractBalanced(str, startIdx) {\n      let depth = 0, i = startIdx;\n      for (; i < str.length; i++) {\n        if (str[i] === '(') depth++;\n        else if (str[i] === ')') { depth--; if (depth === 0) return str.substring(startIdx + 1, i); }\n      }\n      return str.substring(startIdx + 1);\n    }\n\n    const statements = script.split(/\\r?\\n(?=\\s*[\\w,\\s]+?\\w+\\s*\\()/).map(s => s.trim()).filter(Boolean);\n    statements.forEach(stmt => {\n      const arrowIdx = stmt.lastIndexOf('~>');\n      if (arrowIdx === -1) return;\n      const outputName = stmt.substring(arrowIdx + 2).trim().split(/\\s+/)[0];\n      const head = stmt.substring(0, arrowIdx).trim();\n      const parenIdx = head.indexOf('(');\n      if (parenIdx === -1) return;\n      const beforeParen = head.substring(0, parenIdx).trim();\n      const tokens = beforeParen.split(/\\s+/).filter(Boolean);\n      const transformType = (tokens.pop() || '').toLowerCase();\n      const inputNames = tokens.join(' ').split(',').map(s => s.trim()).filter(Boolean);\n      const args = extractBalanced(head, parenIdx);\n\n      inputNames.forEach(inputName => {\n        workflow.connections.push({ from_tool: inputName, to_tool: outputName });\n      });\n\n      let tool = toolMap.get(outputName);\n      if (!tool) {\n        tool = { tool_id: outputName, plugin: `ADF.${transformType}`, tool_type: transformType,\n          tool_category: 'transformation', configuration_summary: {}, business_description: `Process data with ${transformType}` };\n        toolMap.set(outputName, tool);\n      }\n      tool.plugin = `ADF.${transformType}`;\n      tool.tool_type = transformType;\n      tool.configuration_summary = { raw_args: args };\n\n      if (transformType === 'source') {\n        tool.tool_category = 'input';\n        workflow.inputs.push({ tool_id: outputName, source_type: 'dataflow_source', file_path: '', table: '', query: '', connection_name: '' });\n        tool.business_description = `Read source data (${outputName})`;\n      } else if (transformType === 'sink') {\n        tool.tool_category = 'output';\n        workflow.outputs.push({ tool_id: outputName, target_type: 'dataflow_sink', file_path: '', table_name: '' });\n        tool.business_description = `Write output data (${outputName})`;\n      } else if (transformType === 'filter') {\n        tool.tool_category = 'filter';\n        const condition = args.split(',')[0] ? args.split(',')[0].trim() : args.trim();\n        workflow.filters.push({ tool_id: outputName, condition });\n        tool.business_description = condition ? `Filter records where ${condition}` : 'Filter records';\n      } else if (transformType === 'derive' || transformType === 'select' || transformType === 'cast') {\n        tool.tool_category = 'formula';\n        const mapMatches = args.match(/mapColumn\\(([^)]*)\\)/g) || [];\n        const fields = mapMatches.map(m => {\n          const inner = m.replace(/^mapColumn\\(/, '').replace(/\\)$/, '');\n          const parts = inner.split('=');\n          return { field: (parts[0] || '').trim(), expression: (parts[1] || parts[0] || '').trim() };\n        });\n        fields.forEach(f => workflow.formulas.push({ tool_id: outputName, field: f.field, expression: f.expression }));\n        tool.business_description = fields.length ? `Calculate fields (${fields.map(f => f.field).join(', ')})` : `Derive/select columns (${outputName})`;\n      } else if (transformType === 'join' || transformType === 'lookup' || transformType === 'exists') {\n        tool.tool_category = 'join';\n        const typeMatch = args.match(/joinType\\s*:\\s*'([^']+)'/i);\n        const onMatch = args.match(/\\(([^()]*==[^()]*)\\)/);\n        const joinKeys = [];\n        if (onMatch) {\n          const eq = onMatch[1].split('==').map(s => s.trim());\n          joinKeys.push({ left: eq[0] || '', right: eq[1] || '' });\n        }\n        workflow.joins.push({ tool_id: outputName, join_type: typeMatch ? typeMatch[1] : (transformType === 'lookup' ? 'Left' : 'Inner'), join_keys: joinKeys });\n        tool.business_description = joinKeys.length ? `Join datasets on ${joinKeys.map(k => `${k.left}=${k.right}`).join(', ')}` : `Join datasets (${transformType})`;\n      } else if (transformType === 'aggregate') {\n        tool.tool_category = 'aggregation';\n        const groupMatch = args.match(/groupBy\\(([^)]*)\\)/);\n        const groupBy = groupMatch ? groupMatch[1].split(',').map(s => s.trim()).filter(Boolean) : [];\n        const aggMatches = args.match(/mapColumn\\(([^)]*)\\)/g) || [];\n        const aggregations = aggMatches.map(m => {\n          const inner = m.replace(/^mapColumn\\(/, '').replace(/\\)$/, '');\n          const parts = inner.split('=');\n          return { action: (parts[1] || '').trim(), field: (parts[0] || '').trim() };\n        });\n        workflow.aggregations.push({ tool_id: outputName, group_by: groupBy, aggregations });\n        tool.business_description = `Group by ${groupBy.join(', ') || '(none)'} and aggregate: ${aggregations.map(a => `${a.action}(${a.field})`).join(', ') || '(none)'}`;\n      } else if (transformType === 'sort') {\n        tool.tool_category = 'sort';\n        const cols = args.split(',').map(s => s.trim()).filter(Boolean).map(c => {\n          const m = c.match(/^(.*?)\\s+(asc|desc)$/i);\n          return m ? { field: m[1].trim(), order: m[2] } : { field: c, order: '' };\n        });\n        workflow.sorts.push({ tool_id: outputName, columns: cols });\n        tool.business_description = cols.length ? `Sort data by ${cols.map(c => `${c.field} ${c.order}`).join(', ')}` : 'Sort data';\n      } else if (transformType === 'union') {\n        tool.tool_category = 'union';\n        tool.business_description = 'Union multiple datasets';\n      } else {\n        tool.tool_category = 'transformation';\n        tool.business_description = `Process data with ${transformType} (${outputName})`;\n      }\n    });\n  }\n\n  workflow.tools = Array.from(toolMap.values());\n  workflow.tool_count = workflow.tools.length;\n\n  const graph = {};\n  workflow.connections.forEach(c => {\n    if (!graph[c.from_tool]) graph[c.from_tool] = [];\n    graph[c.from_tool].push(c.to_tool);\n  });\n  workflow.dependency_graph = graph;\n\n  const visited = new Set();\n  const flow = [], steps = [];\n  function traverse(toolId, stepNum) {\n    if (visited.has(toolId) || !toolId) return;\n    visited.add(toolId);\n    const tool = toolMap.get(toolId);\n    if (tool) { flow.push(tool.tool_type); steps.push({ step: stepNum, tool_id: toolId, tool_type: tool.tool_type }); }\n    (graph[toolId] || []).forEach(nextId => traverse(nextId, stepNum + 1));\n  }\n  const roots = workflow.tools.filter(t => t.tool_category === 'input').map(t => t.tool_id);\n  roots.forEach((id, idx) => traverse(id, idx + 1));\n  workflow.tools.forEach((t, idx) => traverse(t.tool_id, roots.length + idx + 1));\n  workflow.execution_flow = flow;\n  workflow.execution_steps = steps;\n  workflow.business_logic_candidates = steps.map(s => {\n    const tool = toolMap.get(s.tool_id);\n    return (tool && tool.business_description) ? `${tool.business_description} (${s.tool_type})` : `Process data with ${s.tool_type}`;\n  });\n\n  workflow.is_arm_template_deployment = armPlaceholders.size > 0;\n  workflow.unresolved_arm_parameters = Array.from(armPlaceholders);\n\n  return workflow;\n}\n\nconst input = $input.first().json;\nconst sourceFormat = input.source_format || (input.yxmd_content ? 'alteryx_yxmd' : 'unknown');\nconst rawContent = input.source_content || input.yxmd_content || '';\nif (!rawContent.trim()) throw new Error('Missing source content');\n\nlet workflow;\nif (sourceFormat === 'adf_json') {\n  workflow = parseADFJson(rawContent, input.project_name, input.filename);\n} else {\n  workflow = parseAlteryxYXMD(rawContent, input.project_name, input.filename);\n}\n\nworkflow.source_format = sourceFormat;\nworkflow.repair_cycle = input.repair_cycle || 0;\n\nreturn [{ json: { ...workflow } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -52928,
+        5456
+      ],
+      "id": "2affa386-2dbf-4d42-9730-edb2c660d46d",
+      "name": "Parser - Canonical IR1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this parsed workflow (Canonical IR, sourced from either Alteryx or Azure Data Factory) and extract its business and data semantics:\n\n{{ JSON.stringify($json) }}\n\nReturn ONLY valid JSON with this shape:\n{\n  \"business_intent\": \"1-3 sentence plain-English summary of what this workflow accomplishes\",\n  \"data_lineage\": [ { \"from\": \"<tool_id or source>\", \"to\": \"<tool_id or target>\", \"description\": \"\" } ],\n  \"transformation_narrative\": [ { \"tool_id\": \"\", \"explanation\": \"\" } ],\n  \"join_semantics\": [ { \"tool_id\": \"\", \"business_meaning\": \"\" } ],\n  \"aggregation_semantics\": [ { \"tool_id\": \"\", \"business_meaning\": \"\" } ],\n  \"filter_semantics\": [ { \"tool_id\": \"\", \"business_meaning\": \"\" } ],\n  \"data_contracts\": { \"input_schemas\": [], \"output_schemas\": [] },\n  \"data_quality_rules\": [ \"\" ]\n}\n\nBase every field strictly on the tools, connections, and execution_steps present in the IR. Do not invent tools, fields, or logic that are not in the IR. If a category has no matching tools, return an empty array for it.",
+        "options": {
+          "systemMessage": "You are the Workflow Understanding Agent (Stage 2) in an Alteryx/ADF-to-Databricks migration pipeline. Your job is business-intent extraction, data lineage, transformation discovery, join/aggregation/filter semantics, and data contracts — grounded ONLY in the given Canonical IR (which may have originated from an Alteryx .yxmd workflow or an Azure Data Factory pipeline/dataflow). Never fabricate tools, fields, or business logic that isn't present in the IR. Return ONLY valid JSON. No markdown, no fences, no commentary."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -52512,
+        5456
+      ],
+      "id": "7d25b3d9-6ff1-4f5f-8d13-c02541add12c",
+      "name": "Workflow Understanding Agent1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripJsonComments(text) {\n  // Removes // line comments and /* */ block comments while respecting strings\n  let result = '';\n  let inString = false;\n  let stringChar = '';\n  for (let i = 0; i < text.length; i++) {\n    const ch = text[i];\n    const next = text[i + 1];\n    if (inString) {\n      result += ch;\n      if (ch === '\\\\') { result += next; i++; continue; }\n      if (ch === stringChar) inString = false;\n      continue;\n    }\n    if (ch === '\"' || ch === \"'\") {\n      inString = true;\n      stringChar = ch;\n      result += ch;\n      continue;\n    }\n    if (ch === '/' && next === '/') {\n      while (i < text.length && text[i] !== '\\n') i++;\n      continue;\n    }\n    if (ch === '/' && next === '*') {\n      i += 2;\n      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;\n      i++;\n      continue;\n    }\n    result += ch;\n  }\n  return result;\n}\n\n// NEW: fixes missing commas between list/object items (e.g. \"a\"\\n\"b\" -> \"a\",\\n\"b\")\nfunction insertMissingCommas(text) {\n  // Step 1: pull all quoted strings out into placeholders so we don't touch their contents\n  const strings = [];\n  let skeleton = '';\n  let inString = false, escape = false, current = '';\n  for (let i = 0; i < text.length; i++) {\n    const ch = text[i];\n    if (inString) {\n      current += ch;\n      if (escape) { escape = false; }\n      else if (ch === '\\\\') { escape = true; }\n      else if (ch === '\"') {\n        inString = false;\n        strings.push(current);\n        skeleton += `\\u0001${strings.length - 1}\\u0002`;\n        current = '';\n      }\n      continue;\n    }\n    if (ch === '\"') { inString = true; current = '\"'; continue; }\n    skeleton += ch;\n  }\n\n  // Step 2: insert a comma wherever one value ends and another begins with nothing but\n  // whitespace between them (the classic \"AI forgot a comma\" pattern)\n  skeleton = skeleton.replace(/([}\\]\\u0002])(\\s*)([{\\[\\u0001])/g, '$1,$2$3');\n  skeleton = skeleton.replace(/([0-9a-zA-Z])(\\s+)([{\\[\\u0001])/g, '$1,$2$3');\n\n  // Step 3: put the real string contents back\n  return skeleton.replace(/\\u0001(\\d+)\\u0002/g, (m, idx) => strings[Number(idx)]);\n}\n\nfunction extractJsonObject(raw) {\n  if (!raw) throw new Error('Empty response');\n  let text = raw.trim();\n  const fenceMatch = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenceMatch) text = fenceMatch[1].trim();\n  const start = text.indexOf('{');\n  const end = text.lastIndexOf('}');\n  if (start === -1 || end === -1) throw new Error('No JSON object found in response');\n  text = text.substring(start, end + 1);\n  text = stripJsonComments(text);\n  text = text.replace(/,(\\s*[\\]}])/g, '$1');\n  text = insertMissingCommas(text);\n\n  console.log('CONTEXT:', JSON.stringify(text.slice(3450, 3650))); // TEMP DEBUG\n\n  try {\n    return JSON.parse(text);\n  } catch (err) {\n    throw new Error(`Could not parse JSON even after repair: ${err.message}`);\n  }\n}\n\nconst raw = $input.first().json.output || \"\";\nreturn [{ json: extractJsonObject(raw) }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -51872,
+        5552
+      ],
+      "id": "2c747698-7aa3-440f-915b-b6adc8c2fba8",
+      "name": "Parse Enriched IR1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Build a migration blueprint for a SINGLE Databricks validation notebook from this enriched IR:\n\n{{ JSON.stringify({ ...$json, tools: ($json.tools || []).map(t => ({ tool_id: t.tool_id, tool_type: t.tool_type, tool_category: t.tool_category, business_description: t.business_description })) }) }}\n\n(Note: each tool's low-level configuration_summary is intentionally omitted here to keep this prompt small and fast — you only need tool_id/type/category/business_description to plan step order. The Code Generator stage gets full configuration_summary detail for actually writing the PySpark.)\n\nReturn ONLY valid JSON with this shape:\n{\n  \"execution_plan\": [ { \"step\": 1, \"tool_id\": \"\", \"notebook_action\": \"\" } ],\n  \"notebook_structure\": [ \"load inputs\", \"apply transforms in execution order\", \"validate\", \"exit payload\" ],\n  \"assumptions\": [ \"\" ],\n  \"risks\": [ { \"risk\": \"\", \"impact\": \"\", \"mitigation\": \"\" } ],\n  \"validation_targets\": { \"min_structural_fidelity_pct\": 83, \"required_checks\": [\"row_count\", \"column_count\", \"columns\"] }\n}\n\nCRITICAL COMPLETENESS RULE: execution_plan MUST contain exactly one entry per tool_id in ir.tools (or workflow.tools) whose tool_category is one of [input, output, filter, formula, multifieldformula, multirowformula, join, union, aggregation, sort, macro], listed in execution_steps order. Do not omit, merge, or silently drop any tool_id — downstream fidelity scoring depends on every tool being individually planned.\n\nScope note: this POC generates exactly ONE notebook (validation_notebook) — do not propose multiple notebooks, DAB bundles, DLT pipelines, Unity Catalog objects, or deployment scripts. Only plan the single notebook's internal structure and execution order.",
+        "options": {
+          "systemMessage": "You are the Migration Architect Agent (Stage 3). You validate workflow semantics and produce a Migration Blueprint that plans a SINGLE Databricks notebook (validation_notebook) — no multi-notebook or DAB/DLT/Unity-Catalog architecture for this POC. Ground every step in the given enriched IR. The execution_plan must cover every tool_id in the IR with no omissions — this is required for downstream fidelity scoring. Flag genuine risks (e.g. unsupported .yxdb sources, ADF dataset references with no resolvable path, ambiguous join keys) rather than inventing generic ones. Return ONLY valid JSON, no markdown."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -51664,
+        5552
+      ],
+      "id": "a892b307-c4d9-4579-85ea-f8b47caa3be9",
+      "name": "Migration Architect Agent1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "jsCode": "function extractJsonObject(raw) {\n  if (!raw) throw new Error('Empty response');\n  let text = raw.trim();\n  const fenceMatch = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenceMatch) text = fenceMatch[1].trim();\n  const start = text.indexOf('{');\n  if (start === -1) throw new Error('No JSON object found in response');\n  let depth = 0, inString = false, escape = false;\n  for (let i = start; i < text.length; i++) {\n    const ch = text[i];\n    if (inString) {\n      if (escape) { escape = false; }\n      else if (ch === '\\\\') { escape = true; }\n      else if (ch === '\"') { inString = false; }\n      continue;\n    }\n    if (ch === '\"') { inString = true; continue; }\n    if (ch === '{') depth++;\n    else if (ch === '}') { depth--; if (depth === 0) return text.substring(start, i + 1); }\n  }\n  // Fallback: auto-repair if truncated (close dangling string/braces)\n  if (depth > 0) {\n    let repaired = text.substring(start);\n    if (inString) repaired += '\"';\n    repaired += '}'.repeat(depth);\n    try {\n      JSON.parse(repaired);\n      return repaired;\n    } catch (e) {\n      // repair failed too\n    }\n  }\n  throw new Error(\n    `Unbalanced JSON object in response (no matching closing brace found). ` +\n    `Raw length: ${text.length}, ends with: \"${text.slice(-200)}\"`\n  );\n}\n\n// --- TEMP DEBUG: remove once issue is confirmed/fixed ---\nconsole.log('RAW LENGTH:', ($json.output || '').length);\nconsole.log('RAW TAIL:', ($json.output || '').slice(-300));\n// ---------------------------------------------------------\n\nlet jsonText;\ntry { jsonText = extractJsonObject($json.output || ''); } catch (e) { throw new Error('Migration Architect Agent returned no valid JSON object: ' + e.message); }\n\nlet migration_blueprint;\ntry { migration_blueprint = JSON.parse(jsonText); } catch (e) { throw new Error('Migration Architect Agent returned invalid JSON: ' + e.message); }\n\nconst enriched = $('Parse Enriched IR1').first().json;\n\nreturn [{ json: { ...enriched, migration_blueprint } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -51344,
+        5552
+      ],
+      "id": "5250ea4b-3a67-4d81-a23e-e2a0aa8e492f",
+      "name": "Parse Migration Blueprint1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Generate a complete, executable Databricks validation notebook from this migration-ready context (Canonical IR + semantic enrichment + migration blueprint):\n\n{{ JSON.stringify($json) }}\n\nSTRICT RULES:\n- Return ONLY raw Python source code. First and last character must be valid Python. No markdown, no fences, no explanations.\n- Follow migration_blueprint.execution_plan and notebook_structure for step order.\n- Implement EVERY tool in the IR's tools array (in execution_steps order) — do not skip, merge, or simplify away any filter/formula/multifieldformula/multirowformula/join/union/aggregation/sort/macro. This is a hard requirement, not a best-effort target.\n- Immediately above the PySpark statement(s) implementing a given tool, emit a comment of the EXACT form `# tool_id: <TOOL_ID>` where <TOOL_ID> is copied verbatim from the IR (character-for-character, including any punctuation). This traceability tag is REQUIRED for every filter/formula/multifieldformula/multirowformula/join/union/aggregation/sort tool and is used downstream to automatically verify transformation coverage — omitting it, even when the logic itself is correct, will be treated as a missing transformation.\n- Keep exact file paths / table names that appear in the IR for any read or write operations.\n- Wrap entire notebook in one try/except and always end with dbutils.notebook.exit(json.dumps(...)).\n- SUCCESS payload must contain status, summary, validation, result (row_count, column_count, columns).\n- FAILURE payload must contain status, error_type, error_message, failed_operation.\n- spark and dbutils already exist — never recreate them.\n- For .yxdb sources emit a clear # TODO + raise NotImplementedError (never invent a JDBC driver).\n- For ADF inputs/outputs that are only a dataset/lookup/dataflow-source/dataflow-sink reference with no literal file_path or table (source_type/target_type is 'dataset', 'lookup', 'dataflow_source', or 'dataflow_sink' and file_path/table_name is empty), do NOT invent a path or connection string. Read/write using the reference name as a placeholder Unity Catalog table (e.g. spark.table(\"<name>\")) with a `# TODO: resolve actual ADF linked service/dataset location for <name>` comment.\n- Write clean, production-quality PySpark. Do not add comments that restate obvious code. Only comment where it captures non-obvious business logic (e.g. from enrichment.business_intent, join_semantics, aggregation_semantics) — in addition to the required `# tool_id:` traceability tags above.",
+        "options": {
+          "systemMessage": "You are a Senior Databricks Engineer generating the notebook for an Alteryx/ADF → Databricks migration POC, using the enriched IR and migration blueprint produced by the earlier pipeline stages.\n\nCRITICAL SOURCE-HANDLING RULES (HIGHEST PRIORITY)\n1. If the source file ends with .yxdb (Alteryx proprietary format):\n   - NEVER call spark.read.format(\"parquet\"), spark.read.format(\"csv\"), or any JDBC driver.\n   - NEVER invent a path, driver, or connection string.\n   - Instead emit EXACTLY this block (adapt only the original path string):\n\n     # TODO: migration required — .yxdb is Alteryx proprietary and has no native Spark reader\n     # Options:\n     #   1. Export the data to Parquet/CSV from Alteryx Designer first, then update the path below\n     #   2. Use Alteryx Python SDK offline to convert, then load the converted file\n     raise NotImplementedError(\n         \"YXDB file cannot be read directly by Spark. \"\n         \"Original path was: <PASTE THE EXACT PATH FROM THE IR HERE>. \"\n         \"Convert to Parquet/CSV first.\"\n     )\n\n2. If the source is a normal file (csv, parquet, json, etc.) keep the EXACT path string that appears in the IR — do not rewrite, relativize, or invent a new location.\n3. If the source is an ADF dataset/lookup/dataflow-source/dataflow-sink reference with no literal path (see the ADF placeholder rule in the user prompt), use the reference name as a placeholder Unity Catalog table with a clear `# TODO` comment — never invent a real path or JDBC connection string.\n\nARM TEMPLATE PLACEHOLDER RULE (CRITICAL — CHECK is_arm_template_deployment IN THE IR)\n- If the IR's is_arm_template_deployment is true, the source file is an ARM deployment template, not a resolved pipeline export. Any string of the form \"[parameters('X')]\", \"[variables('X')]\", \"[concat(...)]\", \"[resourceId(...)]\" etc. (see unresolved_arm_parameters for the full list found in this file) is a DEPLOYMENT-TIME PLACEHOLDER with no real value — it is NOT data, NOT a path, NOT a format name, NOT a column list.\n- NEVER copy a \"[parameters(...)]\"-style string into the generated Python as if it were a literal value (e.g. never write `preCopyScript = \"[parameters('preCopyScript_parameter')]\"` — that is meaningless in Python and must not appear in the output).\n- Wherever a tool's configuration_summary field is one of these placeholder strings, treat that specific setting as UNKNOWN: emit a `# TODO: ARM template parameter <name> is unresolved — real value only known at deployment time` comment and use a clearly-fake, obviously-placeholder value (e.g. a variable named `UNRESOLVED_<SETTING>` set to None, or a hardcoded safe default) rather than fabricating something that looks real.\n- Dataset/activity NAMES referenced via `referenceName` (e.g. `{\"referenceName\": \"DataSource\", \"type\": \"DatasetReference\"}`) ARE real literal identifiers even inside an ARM template — only the \"[...]\" expression strings are placeholders. Use those reference names normally.\n\nCONTAINER ACTIVITY RULE (ForEach / Until / IfCondition / Switch)\n- These ADF activities appear in the IR as their own tool (tool_type one of ForEach/Until/IfCondition/Switch, business_description explains the loop/branch condition) with each of their nested activities appearing as SEPARATE tools directly connected to it in the IR's connections/execution_steps.\n- Translate a ForEach into a Python `for` loop over the items expression described in the container tool's business_description (if the items come from a prior Lookup activity's output, iterate over that Lookup's collected rows), with the nested activities' logic (each tagged with its own `# tool_id:`) executed inside the loop body.\n- Translate an Until into a Python `while` loop with the described condition; translate IfCondition/Switch into Python if/elif/else branches, placing each branch's nested activities' logic in the corresponding branch.\n- Do not collapse a container and its nested activities into one opaque block — each nested tool_id still needs its own `# tool_id:` tag and its own real logic, just placed inside the loop/branch instead of at the top level.\n\nTRACEABILITY RULE (REQUIRED FOR FIDELITY SCORING)\n- Every filter/formula/multifieldformula/multirowformula/join/union/aggregation/sort tool from the IR MUST have a `# tool_id: <TOOL_ID>` comment directly above the code that implements it, with the tool_id copied verbatim from the IR. Do not skip any tool. This is checked automatically — missing tags count as missing transformations even if the underlying logic is present.\n\nCODE QUALITY RULES\n- Output ONLY raw executable Python. No markdown, no fences, no explanations.\n- Implement every transform in execution_steps order — full coverage of every tool in the IR is required, not just a percentage target.\n- Wrap the entire notebook in one top-level try/except.\n- Always end every path with: dbutils.notebook.exit(json.dumps(...))\n- spark and dbutils already exist — never recreate them.\n- Prefer readable PySpark (chained DataFrame calls, meaningful variable names) over clever one-liners.\n- Do not restate what the code obviously does in comments. Only comment non-obvious business logic surfaced by the enrichment or blueprint (e.g. why a join/filter/aggregation exists), in addition to the required `# tool_id:` tags.\n- The `status` field's value must be the exact literal string \"SUCCESS\" (all caps) on success or \"FAILED\" (all caps) on failure -- not \"success\"/\"failed\" or any other casing. This is checked with a case-sensitive equality downstream."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -51072,
+        5552
+      ],
+      "id": "b364ee3f-5950-4d34-9f7f-93bce104e83f",
+      "name": "Code Generator (validation_notebook)",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "jsCode": "let code = $json.output || '';\ncode = code.replace(/```python\\s*/gi, '').replace(/```/g, '').trim();\nif (!code) throw new Error('AI returned empty code');\nreturn [{ json: { cleaned_code: code, repair_cycle: 0, repair_reason: null } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -50704,
+        5552
+      ],
+      "id": "293e31e1-b100-492d-977f-a43e584f2e94",
+      "name": "Clean Generated Code"
+    },
+    {
+      "parameters": {
+        "jsCode": "const code = $json.cleaned_code || '';\nconst hardIssues = [];\nconst warnings = [];\n\nif (!/dbutils\\.notebook\\.exit\\s*\\(/.test(code)) hardIssues.push('Missing dbutils.notebook.exit(...) call');\nif (!/\\btry\\s*:/.test(code) || !/\\bexcept\\b/.test(code)) hardIssues.push('Missing top-level try/except');\nif (!/import\\s+json/.test(code)) hardIssues.push('Missing \"import json\" (required for the exit payload)');\n\nconst trimmedForShapeCheck = code.trim().replace(/^json\\s*/i, '').trim();\nif (/^[\\{\\[]/.test(trimmedForShapeCheck)) hardIssues.push('Generated content is a bare JSON object/array, not Python source code — the model returned a fake result payload instead of writing real code');\nif (!/\\bspark\\b/.test(code)) hardIssues.push('No reference to \"spark\" anywhere in the code — this cannot be a real Databricks/PySpark notebook');\nif (!/\\bdef\\b|\\bfor\\b|\\bif\\b|=/.test(code)) hardIssues.push('Content has no Python statements (no def/for/if/assignment) — not real executable code');\n\nconst badYxdb = /spark\\.read.*format\\s*\\(\\s*[\"'](?:parquet|csv|json|jdbc)[\"'].*\\.yxdb/i.test(code)\n             || /option\\s*\\(\\s*[\"']path[\"'].*\\.yxdb/i.test(code);\nif (badYxdb) hardIssues.push('Illegal Spark read against a .yxdb file — must raise NotImplementedError instead');\n\nconst opens = (code.match(/[\\(\\[\\{]/g) || []).length;\nconst closes = (code.match(/[\\)\\]\\}]/g) || []).length;\nif (opens !== closes) warnings.push(`Possible unbalanced brackets/parentheses: ${opens} opening vs ${closes} closing (heuristic only — may be a false positive from brackets inside strings/comments, non-blocking)`);\n\nconst tripleQuotes = (code.match(new RegExp('\"\"\"|' + String.fromCharCode(39,39,39), 'g')) || []).length;\nif (tripleQuotes % 2 !== 0) warnings.push('Possible unbalanced triple-quoted string (heuristic only, non-blocking)');\n\nlet ir = null;\ntry { ir = $('Parser - Canonical IR1').first().json; } catch (e) { ir = null; }\n\nlet fidelity = null;\nconst missingTransformations = [];\nif (ir) {\n  const expectedPaths = [...(ir.inputs || []), ...(ir.outputs || [])]\n    .map(p => p.file_path)\n    .filter(p => p && !p.toLowerCase().endsWith('.yxdb'));\n  expectedPaths.forEach(p => {\n    if (!code.includes(p)) warnings.push(`Original file path not preserved in generated code: ${p}`);\n  });\n\n  const relevantCategories = ['filter','formula','multifieldformula','multirowformula','join','union','aggregation','sort'];\n  const relevantTools = (ir.tools || []).filter(t => relevantCategories.includes(t.tool_category));\n  relevantTools.forEach(t => {\n    if (!code.includes(t.tool_id)) {\n      missingTransformations.push({ tool_id: t.tool_id, tool_type: t.tool_type, tool_category: t.tool_category, business_description: t.business_description });\n    }\n  });\n  const coveredCount = relevantTools.length - missingTransformations.length;\n  fidelity = relevantTools.length ? Math.round((coveredCount / relevantTools.length) * 100) : 100;\n  if (fidelity < 83) {\n    warnings.push(`Structural fidelity heuristic ${fidelity}% is below the 83% target (tool_id traceability tags missing for some transforms) — non-blocking here, will be checked by the Fidelity Auditor`);\n  }\n}\n\nreturn [{\n  json: {\n    cleaned_code: code,\n    static_passed: hardIssues.length === 0,\n    static_issues: hardIssues,\n    static_warnings: warnings,\n    fidelity_heuristic_pct: fidelity,\n    missing_transformations_heuristic: missingTransformations,\n    repair_cycle: $json.repair_cycle || 0,\n    repair_reason: $json.repair_reason || null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -50384,
+        5552
+      ],
+      "id": "9c8e6cec-3b18-43df-b62c-4b656e175a31",
+      "name": "Static Validator1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "static-passed-check",
+              "leftValue": "={{ $json.static_passed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -50064,
+        5552
+      ],
+      "id": "7063dc3f-8a6f-4916-9fc6-c80238e18ed7",
+      "name": "Static Passed?1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "needs-fidelity-check",
+              "leftValue": "={{ $json.repair_reason }}",
+              "rightValue": "runtime_error",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -49696,
+        4992
+      ],
+      "id": "46808ea4-ef6f-440f-b757-2a8f2697440a",
+      "name": "Needs Fidelity Check?1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Compare this generated Databricks PySpark notebook against the source workflow's Canonical IR and judge whether EVERY business-logic-bearing transformation from the IR is faithfully implemented.\n\nCanonical IR tools / execution order / business logic:\n{{ JSON.stringify({ tools: $('Parser - Canonical IR1').first().json.tools, execution_steps: $('Parser - Canonical IR1').first().json.execution_steps, business_logic_candidates: $('Parser - Canonical IR1').first().json.business_logic_candidates }) }}\n\nDeterministic heuristic pre-check (string/tool_id presence only — may have false positives/negatives, verify against the actual code, don't trust it blindly):\nFidelity heuristic: {{ $json.fidelity_heuristic_pct }}%\nHeuristically-flagged missing transformations: {{ JSON.stringify($json.missing_transformations_heuristic) }}\n\nGenerated Notebook Code:\n{{ $json.cleaned_code }}\n\nFor EVERY tool in the IR whose tool_category is one of [filter, formula, multifieldformula, multirowformula, join, union, aggregation, sort], verify the notebook implements its SPECIFIC business logic (the right condition, the right expression, the right join keys, the right group-by/aggregation, the right sort columns) — not just a generic passthrough or an unrelated transform. A `# tool_id: <id>` comment with no matching real logic still counts as missing. Ignore input/output/macro tools for scoring unless a required source read or output write is missing entirely.\n\nReturn ONLY valid JSON:\n{\n  \"total_relevant_transformations\": 0,\n  \"fully_implemented_count\": 0,\n  \"coverage_pct\": 0,\n  \"missing_or_incomplete\": [ { \"tool_id\": \"\", \"tool_type\": \"\", \"business_description\": \"\", \"what_is_missing\": \"\" } ],\n  \"specific_fix_instructions\": \"A precise, actionable instruction set the repair agent should follow to add or correct exactly the missing pieces without touching anything already correct.\"\n}\n\ncoverage_pct must equal round(100 * fully_implemented_count / total_relevant_transformations), or 100 if there are zero relevant transformations. Be strict: wrong logic counts as missing_or_incomplete, not implemented.",
+        "options": {
+          "systemMessage": "You are the Fidelity Auditor Agent (Stage 5) in an Alteryx/ADF-to-Databricks migration pipeline. Your sole job is to verify — strictly and specifically — that the generated PySpark notebook faithfully implements every business-logic-bearing transformation from the Canonical IR (filters, formulas, joins, unions, aggregations, sorts). Vague, generic, or subtly-wrong code that doesn't reflect the IR's actual conditions/expressions/keys counts as missing_or_incomplete. Return ONLY valid JSON, no markdown, no commentary."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -49632,
+        5232
+      ],
+      "id": "ffdb2d13-a48b-4b20-936f-6ee4afec2781",
+      "name": "Fidelity Auditor Agent1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "jsCode": "function extractJsonObject(raw) {\n  if (!raw) throw new Error('Empty response');\n  let text = raw.trim();\n  const fenceMatch = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenceMatch) text = fenceMatch[1].trim();\n  const start = text.indexOf('{');\n  if (start === -1) throw new Error('No JSON object found in response');\n  let depth = 0, inString = false, escape = false;\n  for (let i = start; i < text.length; i++) {\n    const ch = text[i];\n    if (inString) {\n      if (escape) { escape = false; }\n      else if (ch === '\\\\') { escape = true; }\n      else if (ch === '\"') { inString = false; }\n      continue;\n    }\n    if (ch === '\"') { inString = true; continue; }\n    if (ch === '{') depth++;\n    else if (ch === '}') { depth--; if (depth === 0) return text.substring(start, i + 1); }\n  }\n  // Fallback: try to auto-repair truncated JSON by closing what's open\n  if (depth > 0) {\n    let repaired = text.substring(start);\n    if (inString) repaired += '\"';\n    repaired += '}'.repeat(depth);\n    try {\n      JSON.parse(repaired);\n      return repaired;\n    } catch (e) {\n      // repair didn't produce valid JSON either\n    }\n  }\n  throw new Error(\n    `Unbalanced JSON object in response (no matching closing brace found). ` +\n    `Raw length: ${text.length}, ends with: \"${text.slice(-120)}\"`\n  );\n}\n\nlet jsonText;\ntry { jsonText = extractJsonObject($json.output || ''); } catch (e) { throw new Error('Fidelity Auditor Agent returned no valid JSON object: ' + e.message); }\n\nlet audit;\ntry { audit = JSON.parse(jsonText); } catch (e) { throw new Error('Fidelity Auditor Agent returned invalid JSON: ' + e.message); }\n\nconst prior = $('Static Validator1').item.json;\nconst repairCycle = prior.repair_cycle || 0;\nconst coveragePct = typeof audit.coverage_pct === 'number' ? audit.coverage_pct : 0;\nconst TARGET_PCT = 83;\nconst MAX_REPAIR_CYCLES = 8;\nconst meetsTarget = coveragePct >= TARGET_PCT || (audit.missing_or_incomplete || []).length === 0;\nconst capReached = repairCycle >= MAX_REPAIR_CYCLES;\n\nreturn [{\n  json: {\n    cleaned_code: prior.cleaned_code,\n    repair_cycle: repairCycle,\n    fidelity_coverage_pct: coveragePct,\n    fidelity_missing: audit.missing_or_incomplete || [],\n    fidelity_fix_instructions: audit.specific_fix_instructions || '',\n    fidelity_ok: meetsTarget || capReached,\n    fidelity_cap_reached: capReached && !meetsTarget\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -49104,
+        4912
+      ],
+      "id": "b4202b18-1afc-44c7-af36-10611dae57e1",
+      "name": "Parse Fidelity Audit1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fidelity-ok-check",
+              "leftValue": "={{ $json.fidelity_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -48992,
+        5232
+      ],
+      "id": "23c7b54b-de98-42e6-b4c4-adb2e902496d",
+      "name": "Fidelity Gate1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    ...$json,\n    repair_reason: 'fidelity_gap',\n    repair_detail: `Coverage ${$json.fidelity_coverage_pct}% (<83% target). Missing/incomplete: ${JSON.stringify($json.fidelity_missing)}. Fix instructions: ${$json.fidelity_fix_instructions}`,\n    failure_pattern: 'Fidelity Coverage Gap'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48960,
+        5504
+      ],
+      "id": "27f94374-b94a-4547-af20-d9f65988b185",
+      "name": "Prep Fidelity Repair1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    ...$json,\n    repair_reason: 'static_error',\n    repair_detail: ($json.static_issues || []).join(' | ') || 'Static validation failed',\n    failure_pattern: 'Static Validation Failure'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -49792,
+        5824
+      ],
+      "id": "101c90d0-3186-4f3f-bca3-4bd6c9dc1a12",
+      "name": "Build Static Error Context1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Safety valve: even if repairs are exhausted, guarantee at least one\n// real upload+run happens before we can ever reach Build Final Report.\n// CRITICAL: never blindly re-upload whatever cleaned_code currently is --\n// if it isn't real Python (e.g. the model returned a bare JSON payload\n// instead of code), replace it with a guaranteed-valid fallback notebook\n// that honestly reports generation failure instead of faking success.\nconst code = $json.cleaned_code || '';\nconst trimmedForShapeCheck = code.trim().replace(/^json\\s*/i, '').trim();\nconst looksLikeBareJson = /^[\\{\\[]/.test(trimmedForShapeCheck);\nconst hasSpark = /\\bspark\\b/.test(code);\nconst hasExit = /dbutils\\.notebook\\.exit\\s*\\(/.test(code);\nconst isRealCode = !looksLikeBareJson && hasSpark && hasExit;\n\nconst FALLBACK_CODE = `import json\n\ntry:\n    raise RuntimeError(\n        \"Automated code generation failed to produce valid PySpark after \"\n        \"the maximum number of repair cycles. The AI model returned \"\n        \"non-code content instead of a real notebook. Manual review of \"\n        \"the source workflow is required.\"\n    )\nexcept Exception as e:\n    dbutils.notebook.exit(json.dumps({\n        \"status\": \"FAILED\",\n        \"error_type\": \"CodeGenerationFailure\",\n        \"error_message\": str(e),\n        \"failed_operation\": \"code_generation\"\n    }))\n`;\n\nreturn [{\n  json: {\n    cleaned_code: isRealCode ? code : FALLBACK_CODE,\n    repair_cycle: $json.repair_cycle || 9,\n    fidelity_coverage_pct: $json.fidelity_coverage_pct != null ? $json.fidelity_coverage_pct : null,\n    generation_gave_up: !isRealCode\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48752,
+        5840
+      ],
+      "id": "4bd0f850-d54d-4fb0-9bb3-43c08ddf98ab",
+      "name": "Force Upload At Cap1"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const code = $json.cleaned_code ?? $json.last_generated_code ?? null;\n\nif (code === null) {\n  return {\n    json: {\n      error: 'No cleaned_code or last_generated_code found on this item',\n      raw_item: $json\n    }\n  };\n}\n\nreturn {\n  json: {\n    content: Buffer.from(code, 'utf8').toString('base64'),\n    cleaned_code: code,\n    repair_cycle: $json.repair_cycle || 0,\n    fidelity_coverage_pct: $json.fidelity_coverage_pct ?? null,\n    poll_attempt: 0\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48624,
+        5008
+      ],
+      "id": "72819656-256e-4137-81b1-a4dcb096ce65",
+      "name": "Base64 Encode"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_DATABRICKS_WORKSPACE_HOST/api/2.0/workspace/import",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_DATABRICKS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"path\": \"/Users/YOUR_DATABRICKS_USERNAME/validation_notebook\",\n  \"format\": \"SOURCE\",\n  \"language\": \"PYTHON\",\n  \"content\": \"{{ $json.content }}\",\n  \"overwrite\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -48464,
+        5200
+      ],
+      "id": "33e67c24-772d-4208-853e-35718ff07f21",
+      "name": "Upload validation_notebook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Upload HTTP node replaces $json with the (empty) import response.\n// Restore the real state so it survives into Run Job.\nconst prior = $('Base64 Encode').item.json;\nreturn [{ json: { ...prior } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48144,
+        5200
+      ],
+      "id": "e139d8a3-910b-44bb-a948-fda39d36f601",
+      "name": "Carry State After Upload1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_DATABRICKS_WORKSPACE_HOST/api/2.1/jobs/run-now",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_DATABRICKS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"job_id\": 595436610534960\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -47824,
+        5200
+      ],
+      "id": "2b462bcc-b2be-4ff2-85ad-89cdea0222b4",
+      "name": "Run Job"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Run Job response is { run_id: ... } and replaces $json — merge back in.\nconst prior = $('Carry State After Upload1').item.json;\nreturn [{ json: { ...prior, run_id: $json.run_id, poll_attempt: 0 } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -47504,
+        5200
+      ],
+      "id": "e7067a0f-4f4f-452d-b077-1b114a341e59",
+      "name": "Carry State After Run1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "attempt-lt-9",
+              "leftValue": "={{ $json.poll_attempt }}",
+              "rightValue": 9,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -46864,
+        5200
+      ],
+      "id": "ba9a99a1-fe80-4ca8-afcc-82ea799010c7",
+      "name": "Attempt < 9 ?"
+    },
+    {
+      "parameters": {
+        "amount": 9
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -46544,
+        5104
+      ],
+      "id": "a8cd7036-3447-4e76-9900-071998a5760e",
+      "name": "Wait 8 sec",
+      "webhookId": "wait-validation"
+    },
+    {
+      "parameters": {
+        "url": "=https://YOUR_DATABRICKS_WORKSPACE_HOST/api/2.1/jobs/runs/get?run_id={{$json.run_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_DATABRICKS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -46224,
+        5104
+      ],
+      "id": "d080380c-77f1-4c8b-95bc-1d447d6bd18e",
+      "name": "Get Run Status"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get Run Status response replaces $json — merge prior loop state back in,\n// then let the response's own fields (run_id, state, tasks, job_id) sit on top.\nconst prior = $('Increment Attempt[COUNTER]').item.json;\nreturn [{ json: { ...prior, ...$json } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -45904,
+        5104
+      ],
+      "id": "5ec64d4e-81bb-4d1f-96f0-2563fdfb6a5f",
+      "name": "Carry State After Poll1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "terminated",
+              "leftValue": "={{$json.state.life_cycle_state}}",
+              "rightValue": "TERMINATED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "internal-error",
+              "leftValue": "={{$json.state.life_cycle_state}}",
+              "rightValue": "INTERNAL_ERROR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "skipped",
+              "leftValue": "={{$json.state.life_cycle_state}}",
+              "rightValue": "SKIPPED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -45584,
+        5104
+      ],
+      "id": "7aec64a1-795a-4435-9bd3-274ffc34fa5c",
+      "name": "Job Finished?"
+    },
+    {
+      "parameters": {
+        "url": "=https://YOUR_DATABRICKS_WORKSPACE_HOST/api/2.1/jobs/runs/get-output?run_id={{$json.tasks[0].run_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_DATABRICKS_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -45328,
+        4816
+      ],
+      "id": "aec4367a-a742-4696-a346-bd7949486205",
+      "name": "Get Notebook Output"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prior = $('Carry State After Poll1').item.json;\nreturn [{ json: { ...prior, notebook_output_response: $json } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -45008,
+        4816
+      ],
+      "id": "0f0ebed4-4852-44d5-bbe3-af91d3ea998e",
+      "name": "Carry State After Output1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const resp = $json.notebook_output_response || {};\nif (!resp.notebook_output || !resp.notebook_output.result) {\n  // No exit payload at all (e.g. the notebook crashed before reaching dbutils.notebook.exit,\n  // or Databricks returned no output). Shape this as a real actual_result so every downstream\n  // consumer (SUCCESS?1, Build Error Context1) sees a consistent, non-null error_message/error_type\n  // instead of silently nulling out the error_history columns.\n  return [{\n    json: {\n      ...$json,\n      actual_result: {\n        status: 'FAILED',\n        error_type: 'NoNotebookOutput',\n        error_message: (resp.notebook_output && resp.notebook_output.diagnostics) || (resp.error) || 'No notebook output returned (notebook likely raised before reaching dbutils.notebook.exit)',\n        failed_operation: null\n      },\n      metadata: resp\n    }\n  }];\n}\nconst payload = JSON.parse(resp.notebook_output.result);\nif (payload.error_type === 'NotebookExit' && payload.error_message) {\n  return [{ json: { ...$json, actual_result: JSON.parse(payload.error_message), metadata: resp } }];\n}\nreturn [{ json: { ...$json, actual_result: payload, metadata: resp } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -44688,
+        4816
+      ],
+      "id": "fa4887ef-2b5a-4664-86bf-11a6c5291088",
+      "name": "Parse Notebook Result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "success-check-task",
+              "leftValue": "={{ $json.notebook_output_response.metadata.tasks[0].status.termination_details.code }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "success-check-payload",
+              "leftValue": "={{ $json.actual_result.status }}",
+              "rightValue": "SUCCESS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -44368,
+        4816
+      ],
+      "id": "f0bd8558-6aa5-455e-b2e6-161c4607dd26",
+      "name": "SUCCESS?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $json.metadata && $json.metadata.state || {};\nreturn [{\n  json: {\n    run_id: $json.run_id || ($json.metadata && $json.metadata.run_id) || null,\n    repair_cycle: $json.repair_cycle || 0,\n    status: state.result_state || null,\n    error_message: ($json.actual_result && $json.actual_result.error_message) || state.state_message || null,\n    error_type: ($json.actual_result && $json.actual_result.error_type) || null,\n    error_trace: ($json.actual_result && $json.actual_result.error_message) || null,\n    failure_pattern: 'New Failure',\n    generated_code: $json.cleaned_code || '',\n    repair_reason: 'runtime_error',\n    summary: null\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -43984,
+        5360
+      ],
+      "id": "6783428c-6f12-4cdc-a6b3-773ce3592f78",
+      "name": "Build Error Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "function extractJsonObject(raw) {\n  if (!raw) throw new Error('Empty response');\n  let text = raw.trim();\n  const fenceMatch = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fenceMatch) text = fenceMatch[1].trim();\n  const start = text.indexOf('{');\n  if (start === -1) throw new Error('No JSON object found in response');\n  let depth = 0, inString = false, escape = false;\n  for (let i = start; i < text.length; i++) {\n    const ch = text[i];\n    if (inString) {\n      if (escape) { escape = false; }\n      else if (ch === String.fromCharCode(92)) { escape = true; }\n      else if (ch === '\"') { inString = false; }\n      continue;\n    }\n    if (ch === '\"') { inString = true; continue; }\n    if (ch === '{') depth++;\n    else if (ch === '}') { depth--; if (depth === 0) return text.substring(start, i + 1); }\n  }\n  throw new Error('Unbalanced JSON object in response (no matching closing brace found)');\n}\n\nlet jsonText;\ntry { jsonText = extractJsonObject($json.output || ''); } catch (e) { throw new Error('Error Classifier1 returned no valid JSON object: ' + e.message); }\nconst summary = JSON.parse(jsonText);\n\nconst source = $('Build Error Context').item.json;\n\nfunction hashCode(str) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }\n  return (h >>> 0).toString(16);\n}\nconst normalizedCode = (source.generated_code || '').replace(/\\s+/g, ' ').trim();\n\nreturn [{\n  json: {\n    run_id: source.run_id,\n    repair_cycle: source.repair_cycle,\n    status: source.status,\n    error_message: source.error_message,\n    error_type: source.error_type,\n    error_category: summary.error_category || source.error_type || 'Unknown',\n    is_file_path_error: summary.is_file_path_error === true,\n    failure_pattern: summary.failure_pattern || source.failure_pattern,\n    generated_code: source.generated_code,\n    code_hash: hashCode(normalizedCode),\n    summary: summary.summary || null,\n    root_cause: summary.root_cause || null,\n    suggested_resolution: summary.suggested_resolution || null,\n    repair_reason: 'runtime_error',\n    fixed: false,\n    created_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -43216,
+        5360
+      ],
+      "id": "22ebf677-8ff5-4007-90aa-cc97989553c6",
+      "name": "Merge Classifier Output"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "GIlRBZfFf5Kp8hmi",
+          "mode": "list",
+          "cachedResultName": "agent_error_history"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "session_id": "={{ $execution.id }}",
+            "attempt": "={{ $json.repair_cycle }}",
+            "run_id": "={{ $json.run_id }}",
+            "error_message": "={{ $json.error_message }}",
+            "error_type": "={{ $json.error_type }}",
+            "error_category": "={{ $json.error_category }}",
+            "failure_pattern": "={{ $json.failure_pattern }}",
+            "generated_code": "={{ $json.generated_code }}",
+            "code_hash": "={{ $json.code_hash }}",
+            "summary": "={{ $json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "session_id",
+              "displayName": "session_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "attempt",
+              "displayName": "attempt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "run_id",
+              "displayName": "run_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_type",
+              "displayName": "error_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_category",
+              "displayName": "error_category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "failure_pattern",
+              "displayName": "failure_pattern",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "generated_code",
+              "displayName": "generated_code",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "code_hash",
+              "displayName": "code_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -42912,
+        5360
+      ],
+      "id": "4652b517-1974-46fc-b215-2812d855867d",
+      "name": "Insert Error History"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "GIlRBZfFf5Kp8hmi",
+          "mode": "list",
+          "cachedResultName": "agent_error_history"
+        },
+        "limit": 20,
+        "orderBy": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -42624,
+        5360
+      ],
+      "id": "a2086833-c381-4c1c-9624-c726a10e529a",
+      "name": "Get Error History"
+    },
+    {
+      "parameters": {
+        "jsCode": "const sessionId = $execution.id;\nconst history = items\n  .filter(item => item.json.session_id === sessionId)\n  .map(item => ({\n    error_message: item.json.error_message,\n    error_type: item.json.error_type,\n    error_category: item.json.error_category,\n    failure_pattern: item.json.failure_pattern,\n    summary: item.json.summary,\n    generated_code: item.json.generated_code,\n    code_hash: item.json.code_hash\n  }));\nconst current = $('Merge Classifier Output').item.json;\nreturn [{ json: { ...current, error_memory: history } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -42336,
+        5360
+      ],
+      "id": "a4c286c9-018f-4fd7-b8e3-761aa9cd7cb5",
+      "name": "Pack Error Memory"
+    },
+    {
+      "parameters": {
+        "jsCode": "const mc = $json; // already merged: repair_cycle, is_file_path_error, failure_pattern, code_hash, error_memory\nconst memory = mc.error_memory || [];\n\nconst REPEAT_THRESHOLD = 5;      // raised from 3 - a single similar-looking repair shouldn't trip an early stop\nconst SAME_CODE_REPEAT_THRESHOLD = 2;\nconst MIN_CYCLES_BEFORE_STOP = 2; // always allow at least 2 full generate -> static -> repair cycles\nconst MAX_REPAIR_CYCLES = 8;\n\nconst repairCycle = mc.repair_cycle || 0;\nconst isRealFilePathError = mc.is_file_path_error === true; // only ever set true after a real Databricks run (see Merge Classifier Output1)\nconst sameFailureCount = memory.filter(m => m.failure_pattern === mc.failure_pattern).length;\nconst sameFailureSameCodeCount = memory.filter(m => m.failure_pattern === mc.failure_pattern && m.code_hash === mc.code_hash).length;\nconst patternExhausted = sameFailureCount >= REPEAT_THRESHOLD || sameFailureSameCodeCount >= SAME_CODE_REPEAT_THRESHOLD;\nconst maxCyclesReached = repairCycle >= MAX_REPAIR_CYCLES;\nconst belowMinCycles = repairCycle < MIN_CYCLES_BEFORE_STOP;\n\nlet shouldRetry = true;\nlet stopReason = null;\n\nif (maxCyclesReached) {\n  shouldRetry = false; stopReason = 'max_repair_cycles_reached';\n} else if (belowMinCycles) {\n  shouldRetry = true; stopReason = null;\n} else if (isRealFilePathError) {\n  shouldRetry = false; stopReason = 'file_path_error';\n} else if (patternExhausted) {\n  shouldRetry = false; stopReason = 'failure_pattern_repeated';\n}\n\nreturn [{ json: { ...mc, should_retry: shouldRetry, stop_reason: stopReason } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -41952,
+        5360
+      ],
+      "id": "6eb0dcd3-75a4-4456-aafb-cab978cc6b87",
+      "name": "Retry Governor1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "should-retry-check",
+              "leftValue": "={{ $json.should_retry }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -41616,
+        5360
+      ],
+      "id": "576000b3-a33a-45cd-8ff5-2e4ad3c168df",
+      "name": "Should Retry?1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const repairCycle = ($json.repair_cycle || 0) + 1;\n\nlet ir;\ntry { ir = $('Parse Enriched IR1').first().json; } catch (e) { ir = $('Parser - Canonical IR1').first().json; }\nlet blueprint = null;\ntry { blueprint = $('Parse Migration Blueprint1').first().json.migration_blueprint; } catch (e) { blueprint = null; }\n\nreturn [{\n  json: {\n    repair_cycle: repairCycle,\n    repair_reason: $json.repair_reason || 'runtime_error',\n    ir_context: JSON.stringify(ir),\n    blueprint_context: blueprint ? JSON.stringify(blueprint) : '',\n    generated_code: $json.generated_code || $json.cleaned_code || '',\n    run_status: $json.status || null,\n    error_type: $json.error_type || null,\n    error_category: $json.error_category || null,\n    error: $json.error_message || null,\n    error_trace: $json.error_trace || null,\n    root_cause: $json.root_cause || null,\n    suggested_resolution: $json.suggested_resolution || null,\n    repair_detail: $json.repair_detail || null,\n    fidelity_missing: $json.fidelity_missing || [],\n    fidelity_fix_instructions: $json.fidelity_fix_instructions || '',\n    error_memory: $json.error_memory || []\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -41280,
+        5584
+      ],
+      "id": "9a548949-f19a-423d-85b9-8fe7e37954ab",
+      "name": "Build Repair Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Original IR (with semantic enrichment):\n{{ $json.ir_context }}\n\nMigration Blueprint:\n{{ $json.blueprint_context }}\n\nCurrent Notebook:\n{{ $json.generated_code }}\n\nRepair Cycle: {{ $json.repair_cycle }} of 8\nRepair Reason: {{ $json.repair_reason }}\n\n{{ $json.repair_reason === 'fidelity_gap' ? ('COVERAGE GAP - the following IR transformations are missing or incompletely implemented and MUST be added/corrected without altering anything already correct:\\n' + JSON.stringify($json.fidelity_missing) + '\\n\\nSpecific instructions from the Fidelity Auditor:\\n' + $json.fidelity_fix_instructions) : ($json.repair_reason === 'static_error' ? ('STATIC VALIDATION FAILURE - the notebook failed these deterministic checks:\\n' + $json.repair_detail) : ($json.repair_reason === 'table_validation_gap' ? ('TABLE VALIDATION FAILURE - the notebook ran successfully on Databricks, but a post-run comparison against the source data did not pass:\\n' + $json.repair_detail + '\\n\\nThe notebook likely has a bug in a filter/join/aggregation/formula/dedup step that is silently producing wrong rows or columns rather than raising an exception. Use missing_rows/extra_rows/schema_match/column_differences/sample_mismatches above to identify which transformation is responsible, and fix that specific logic.') : ('RUNTIME FAILURE on Databricks -\\nRun Status: ' + $json.run_status + '\\nError Type: ' + $json.error_type + ' (' + $json.error_category + ')\\nError: ' + $json.error + '\\nTrace: ' + $json.error_trace + '\\nRoot Cause: ' + $json.root_cause + '\\nSuggested Resolution: ' + $json.suggested_resolution))) }}\n\nFailure History (avoid repeating a fix that already failed for the same pattern): {{ JSON.stringify($json.error_memory) }}\n\nRepair the notebook with the SMALLEST possible change that resolves the issue above. Preserve >= 95% of the previous code, all business logic, all `# tool_id: <id>` traceability comments, and every original file path. If this is a fidelity_gap repair, ADD the missing transformation logic (with its `# tool_id: <id>` tag) at the correct point in the execution order - do not remove or weaken any existing transformation.\n\nIf the Failure History shows the SAME failure_pattern already occurred with a similarly-shaped fix, do NOT repeat that fix - propose a materially different implementation strategy for that step instead.\n\nReturn ONLY executable Python source code.",
+        "options": {
+          "systemMessage": "You are the Databricks Notebook Repair Agent (POC).\n\nSOURCE-HANDLING RULE (MUST OBEY)\n- If the failing code tries to read a .yxdb file with any Spark format (parquet, csv, jdbc, ...):\n  Replace that entire read block with the exact NotImplementedError pattern from the Generator rules.\n  Do NOT try to \"fix\" the path or invent a new format.\n- The same applies to unresolved ADF dataset/lookup/dataflow-source/dataflow-sink references: use the reference\n  name as a placeholder Unity Catalog table with a `# TODO` comment, never invent a real path or JDBC connection.\n- If the IR's is_arm_template_deployment is true and the current code contains a literal \"[parameters('X')]\" /\n  \"[variables('X')]\" / \"[concat(...)]\" style string (check unresolved_arm_parameters in the IR), that is an ARM\n  deployment-time placeholder, not real data. Replace it with a `# TODO: ARM template parameter unresolved` comment\n  and an obviously-fake placeholder value — never leave the raw \"[...]\" expression sitting in working Python.\n- If a container activity (ForEach/Until/IfCondition/Switch) and its nested tool_ids are not yet reflected as a\n  Python loop/if wrapping the nested activities' logic, restructure it that way rather than leaving the nested\n  logic flattened or missing.\n- For a table_validation_gap repair: the code ran without error, so this is a LOGIC bug, not a syntax/runtime bug.\n  Use the comparison details (missing_rows, extra_rows, schema_match, column_differences, sample_mismatches) to find\n  which specific transformation is wrong (a filter excluding rows it shouldn't, a join dropping/duplicating rows, a\n  formula computing the wrong value, a dedup step being too aggressive, a column type/name mismatch, etc.) and fix\n  only that step.\n\nREPAIR RULES\n1. Output ONLY raw Python. No markdown, no fences.\n2. Make the SMALLEST possible change that fixes the exact issue (static failure, fidelity gap, table validation mismatch, or runtime traceback).\n3. Preserve >= 95% of the previous code and every original file path / transform / `# tool_id:` tag.\n4. Never invent JDBC drivers or parquet readers for .yxdb.\n5. Keep the top-level try/except + dbutils.notebook.exit contract.\n6. If this is a fidelity_gap repair, ADD the missing tool's logic (with its `# tool_id: <id>` tag) without touching\n   anything already correctly implemented - do not regress previously-passing transformations.\n7. If the Failure History shows the same failure_pattern already appeared, do NOT re-emit a near-identical fix -\n   change the implementation strategy for that step.\n8. Keep comments minimal - only where they explain non-obvious business logic, plus the required `# tool_id:` tags.\n9. The `status` field's value must be the exact literal string \"SUCCESS\" (all caps) on success or \"FAILED\" (all caps) on failure -- not \"success\"/\"failed\" or any other casing. This is checked with a case-sensitive equality downstream."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -40896,
+        5584
+      ],
+      "id": "291e8bb5-9d57-4431-9092-5293b260bf00",
+      "name": "Self-Healing Fix",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "jsCode": "let code = $json.output || '';\ncode = code.replace(/```python\\s*/gi, '').replace(/```/g, '').trim();\nif (!code) throw new Error('Repair agent returned empty code');\nconst ctx = $('Build Repair Context').item.json;\nreturn [{ json: { cleaned_code: code, repair_cycle: ctx.repair_cycle, repair_reason: ctx.repair_reason, error_memory: ctx.error_memory } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40496,
+        5584
+      ],
+      "id": "877bc15f-47d1-48f9-ab45-9750a7487e25",
+      "name": "Clean Repaired Code"
+    },
+    {
+      "parameters": {
+        "jsCode": "function hashCode(str) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) { h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }\n  return (h >>> 0).toString(16);\n}\nfunction similarity(a, b) {\n  const la = a.split(/\\r?\\n/).map(l => l.trim()).filter(Boolean);\n  const lb = b.split(/\\r?\\n/).map(l => l.trim()).filter(Boolean);\n  if (la.length === 0 || lb.length === 0) return 0;\n  const setB = new Set(lb);\n  const shared = la.filter(l => setB.has(l)).length;\n  return shared / Math.max(la.length, lb.length);\n}\n\nconst newCode = $json.cleaned_code || '';\nconst repairCycle = $json.repair_cycle || 1;\nconst newHash = hashCode(newCode.replace(/\\s+/g, ' ').trim());\nconst memory = $json.error_memory || [];\n\nlet isNovel = true;\nif (repairCycle >= 2) {\n  isNovel = !memory.some(m => m.code_hash === newHash || similarity(newCode, m.generated_code || '') >= 0.9);\n}\n\nreturn [{ json: { cleaned_code: newCode, code_hash: newHash, is_novel: isNovel, repair_cycle: repairCycle, repair_reason: $json.repair_reason } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40160,
+        5584
+      ],
+      "id": "98593fe4-bca1-43fe-bc06-09095af281dd",
+      "name": "Check Fix Novelty1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "novel-fix-check",
+              "leftValue": "={{ $json.is_novel }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -39776,
+        5584
+      ],
+      "id": "673e18c7-5b70-4e91-91f6-6da52a6f352c",
+      "name": "Novel Fix?1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let payload;\n\nif ($json.actual_result) {\n  payload = {\n    status: 'SUCCESS',\n    outcome: 'validation_notebook executed successfully',\n    repair_cycles_used: $json.repair_cycle || 0,\n    fidelity_coverage_pct: $json.fidelity_coverage_pct != null ? $json.fidelity_coverage_pct : null,\n    result: $json.actual_result.result || null,\n    validation: $json.actual_result.validation || null,\n    summary: $json.actual_result.summary || null\n  };\n} else {\n  const repairCycle = $json.repair_cycle || 0;\n  let stopReason = $json.stop_reason || null;\n  if (!stopReason) {\n    if ($json.is_novel === false) stopReason = 'duplicate_fix_detected';\n    else if (repairCycle >= 8) stopReason = ($json.repair_reason === 'fidelity_gap') ? 'max_repair_cycles_reached_fidelity_gap' : 'max_repair_cycles_reached';\n    else stopReason = 'unknown';\n  }\n  payload = {\n    status: 'STOPPED',\n    stop_reason: stopReason,\n    repair_cycles_used: repairCycle,\n    error_type: $json.error_type || null,\n    error_category: $json.error_category || null,\n    last_error_message: $json.error_message || null,\n    last_generated_code: $json.cleaned_code || $json.generated_code || null,\n    fidelity_coverage_pct: $json.fidelity_coverage_pct != null ? $json.fidelity_coverage_pct : null,\n    summary: $json.summary || null\n  };\n}\n\nreturn [{ json: payload }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -42064,
+        4800
+      ],
+      "id": "6633a98e-9fa2-4943-b872-afbafa55f983",
+      "name": "Build Final Report1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "timeout-status",
+              "name": "status",
+              "value": "TIMEOUT",
+              "type": "string"
+            },
+            {
+              "id": "timeout-msg",
+              "name": "message",
+              "value": "Databricks job did not succeed within the maximum of 9 poll attempts.",
+              "type": "string"
+            },
+            {
+              "id": "timeout-attempts",
+              "name": "attempts",
+              "value": "={{$json.poll_attempt}}",
+              "type": "number"
+            },
+            {
+              "id": "timeout-runid",
+              "name": "run_id",
+              "value": "={{$json.run_id}}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -46448,
+        5488
+      ],
+      "id": "9bafcdef-fda9-414d-98f2-2e7a5d4886cc",
+      "name": "Set TIMEOUT"
+    },
+    {
+      "parameters": {
+        "errorMessage": "MAX_RETRIES (9) reached - stopping self-heal loop"
+      },
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        -46128,
+        5488
+      ],
+      "id": "0695059b-d3eb-4e5f-9d52-1af9565cb0c9",
+      "name": "Stop on Max Retries"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "nvidia/ising-calibration-1.5-31b",
+          "mode": "list",
+          "cachedResultName": "nvidia/ising-calibration-1.5-31b"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -52512,
+        5776
+      ],
+      "id": "aa893414-175d-4473-a04d-051bc504403f",
+      "name": "OpenAI Chat Model (Understanding)2",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "nvidia/ising-calibration-1.5-31b",
+          "mode": "list",
+          "cachedResultName": "nvidia/ising-calibration-1.5-31b"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 4545
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -51664,
+        5840
+      ],
+      "id": "ebd358cb-d338-4725-ba62-596b83c3b5df",
+      "name": "OpenAI Chat Model (Understanding)3",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "meta/llama-3.1-70b-instruct",
+          "mode": "list",
+          "cachedResultName": "meta/llama-3.1-70b-instruct"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 6000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -51072,
+        5824
+      ],
+      "id": "6a920254-f9cd-4189-9179-d73689bed3dc",
+      "name": "OpenAI Chat Model (Understanding)4",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "nvidia/ising-calibration-1.5-31b",
+          "mode": "list",
+          "cachedResultName": "nvidia/ising-calibration-1.5-31b"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 4545
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -49632,
+        5472
+      ],
+      "id": "732802ff-7e74-491e-9698-0372a7458d0d",
+      "name": "OpenAI Chat Model (Understanding)5",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "nvidia/ising-calibration-1.5-31b",
+          "mode": "list",
+          "cachedResultName": "nvidia/ising-calibration-1.5-31b"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -43680,
+        5552
+      ],
+      "id": "c0789aac-8638-4e21-9af4-a030cce42bb4",
+      "name": "OpenAI Chat Model (Understanding)6",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "meta/llama-3.1-70b-instruct",
+          "mode": "list",
+          "cachedResultName": "meta/llama-3.1-70b-instruct"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "maxTokens": 6000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -40896,
+        5888
+      ],
+      "id": "e9659a07-4481-4ee0-bc34-e7aeab451379",
+      "name": "OpenAI Chat Model (Understanding)7",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000,
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let text = $input.first().json.output || \"\";\n\n// Remove markdown code fences\ntext = text.replace(/```json\\s*/gi, \"\");\ntext = text.replace(/```\\s*$/g, \"\");\n\n// Trim whitespace\ntext = text.trim();\n\nreturn [\n  {\n    json: {\n      output: text\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -52128,
+        5456
+      ],
+      "id": "a18b76cc-53cf-4cea-a840-769115f0ca59",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "let text = $input.first().json.output || \"\";\n\n// Remove markdown code fences\ntext = text.replace(/```json\\s*/gi, \"\");\ntext = text.replace(/```\\s*$/g, \"\");\n\n// Trim whitespace\ntext = text.trim();\n\nreturn [\n  {\n    json: {\n      output: text\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -49328,
+        4912
+      ],
+      "id": "47525010-e8bf-4ad2-8976-8034f39f8589",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "content": "Serves as the entry point for the automation workflow when a user submits a raw pipeline file.\n\n[NEEDS ALL TH EPARAMETERIZED OUTPUT]",
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -53776,
+        5280
+      ],
+      "id": "c556c57d-12db-44fe-9f5c-47b2a14e1a48",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Reads the uploaded file stream, decodes text/XML/JSON formatting, handles compression or nested metadata if present, and outputs the raw source payload for parsing [to read with binary]",
+        "width": 288
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -53328,
+        5280
+      ],
+      "id": "3e3db8fe-1685-4ff2-9e63-5e8e45aa188c",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "Strips out canvas layouts, coordinates, and tool-specific bloat. It maps source components (joins, filters, aggregations) into a unified JSON format that retains field schemas, transformation rules, and parent-child data lineage.",
+        "height": 192,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -53024,
+        5584
+      ],
+      "id": "6317871b-6ada-4995-a86c-ea48b2720801",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "dentify execution dependencies, data types, business logic patterns, and edge cases, generating an Enriched IR.",
+        "height": 128
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -52512,
+        5312
+      ],
+      "id": "321bf866-f0a6-4c0e-b9b5-5780d13ef1ed",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "plans variable scoping, script organization, error-handling wrappers, and execution sequence rules into a Migration Blueprint.",
+        "height": 144
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -51680,
+        5392
+      ],
+      "id": "ee2b326c-3d33-4a2e-8ddb-8678e38a7448",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "Writes the functional PySpark code for the Databricks notebook based on the Migration Blueprint",
+        "height": 128
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -51072,
+        5408
+      ],
+      "id": "05878af5-ea48-4c0a-a6e9-7065554d5074",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "Runs deterministic syntax and compliance checks on the PySpark script before executing on Databricks",
+        "height": 128,
+        "width": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50432,
+        5408
+      ],
+      "id": "bb1d4c29-eb81-49d0-8912-4fa90ded4914",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "How it works: If static checks pass → moves to the Fidelity Check decision. If they fail → routes to Prep Static Error / Cap Check to trigger the repair loop"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -50144,
+        5376
+      ],
+      "id": "08ca1769-966f-4870-95ae-325ea570b755",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cap-check",
+              "leftValue": "={{ $json.repair_cycle || 0 }}",
+              "rightValue": 9,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -49280,
+        5824
+      ],
+      "id": "695956fd-3a65-4b95-a3a8-7fa348d9d48c",
+      "name": "Loop controller"
+    },
+    {
+      "parameters": {
+        "content": "it is only deciding whether the workflow should run the Fidelity Check or skip it.",
+        "height": 128,
+        "width": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -49744,
+        4832
+      ],
+      "id": "19f0450f-7d0c-4bf3-83b8-7810e63e751b",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "content": "Compares the generated PySpark code line-by-line back to the original Canonical IR, the analyzed archetecture\nCHECK FOR MINIMUM PERCENT MATCH ",
+        "height": 176
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -49504,
+        5424
+      ],
+      "id": "da6c9b04-b5e2-4213-839f-3750487014ed",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "content": "THIS BOTH ARE RESPONSIBLE FOR VALIDATING THE FADALITY OUTPUT WEATHER IT WAS DONE CORRCET..",
+        "height": 96,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -49312,
+        4784
+      ],
+      "id": "5528cf0e-57ac-4650-b396-53f893fcfc92",
+      "name": "Sticky Note10"
+    },
+    {
+      "parameters": {
+        "content": "THIS CHECKS WEATHER THE FEDILITY WAS OKK",
+        "height": 96,
+        "width": 176
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -49200,
+        5232
+      ],
+      "id": "8243fb1d-3306-42e7-ab59-30b3334047f0",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "missing functional logic or code gaps identified by the auditor into a repair prompt.",
+        "height": 112,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48816,
+        5504
+      ],
+      "id": "dffd8ee1-49b4-4fc3-8c3e-c5b6bd638b3a",
+      "name": "Sticky Note12"
+    },
+    {
+      "parameters": {
+        "content": "THIS ENSURES ATLEST ONE EXECUTION WE HAVE IN THE DATABRICKS",
+        "height": 112,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48816,
+        5984
+      ],
+      "id": "968c7f65-ddff-4436-b708-8d3fa24eb78c",
+      "name": "Sticky Note13"
+    },
+    {
+      "parameters": {
+        "content": "ONCE WE CONVERT THE THINGS INOT BASE 64, WE LOOSE ALL CONTEXT,\nWITH THIS WE CAN MAINTAIN THE CONTEXT",
+        "height": 144,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -48272,
+        5040
+      ],
+      "id": "9f5f98d3-52a9-45e9-b2b3-dd6e285b25ab",
+      "name": "Sticky Note14"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"poll_attempt\": {{ Number($json.poll_attempt || 0) + 1 }},\n  \"run_id\": {{ $json.run_id }}\n}",
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -47184,
+        5200
+      ],
+      "id": "92f6ad8e-1212-4751-97c9-38bcb12bd54e",
+      "name": "Increment Attempt[COUNTER]"
+    },
+    {
+      "parameters": {
+        "content": "IF TAKING TOO MANY LOOPS FORCE STOP THE WORKFLOW",
+        "height": 80,
+        "width": 176
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -45984,
+        5504
+      ],
+      "id": "b8dd76bc-690c-43ed-8b0a-82a6be8756c7",
+      "name": "Sticky Note15"
+    },
+    {
+      "parameters": {
+        "content": "ALL THIS LOOP IS FOR CONTINIOUSLY POLL AND FIND OUT WEATHER THE JOB COMPLETED ITS RUN.",
+        "height": 80,
+        "width": 432
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -46272,
+        4992
+      ],
+      "id": "dbbbb601-7d57-49b6-8f6d-a6c74cc7462c",
+      "name": "Sticky Note16"
+    },
+    {
+      "parameters": {
+        "content": "it understands why the Databricks job failed and converts a messy runtime error into a structured JSON",
+        "height": 96,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -43712,
+        5248
+      ],
+      "id": "9b9e335c-474f-4508-af43-54a2e1241abc",
+      "name": "Sticky Note17"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the Databricks/validation failure.\n\nError Type: {{ $json.error_type }}\nError:\n{{ $json.error_message }}\n\nError Trace:\n{{ $json.error_trace }}\n\nReturn ONLY valid JSON:\n{\n  \"error_category\": \"\",\n  \"root_cause\": \"\",\n  \"failure_pattern\": \"\",\n  \"suggested_resolution\": \"\",\n  \"summary\": \"\",\n  \"is_file_path_error\": false\n}\n\nSet \"is_file_path_error\" to true ONLY if the failure is exclusively caused by the source file/table not being reachable at the given path (e.g. FileNotFoundException, Path does not exist, [PATH_NOT_FOUND], access denied on the exact original path) and would NOT be fixed by changing the generated code. This is only ever evaluated after a real Databricks job run — never for a static-validation-only failure.",
+        "options": {
+          "systemMessage": "You are a Databricks Error Analysis Specialist. Analyze ONLY the provided error from a real job run. Do not invent missing libraries, tables or permissions. Return ONLY valid JSON matching the schema. No markdown."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -43680,
+        5360
+      ],
+      "id": "d54d4fba-f4ff-410b-958e-a0f1435aa910",
+      "name": "Error Classifier",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 4000
+    },
+    {
+      "parameters": {
+        "content": "STORE ALL THE ERROR DETILS FOR THE AGENT STO RECTIFY THE ERRORS BETTER",
+        "height": 96,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -42880,
+        5248
+      ],
+      "id": "7c267301-90e0-41f1-b149-0a6202647af8",
+      "name": "Sticky Note18"
+    },
+    {
+      "parameters": {
+        "content": "DECIDE WEATHER TO RETRY THE ERROR OR NOT , (WHAT IF THE SAME ERROR IS  OCCOURING AGAIN AND AGAIN)",
+        "height": 96,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -41920,
+        5248
+      ],
+      "id": "0bb14270-ef46-4a99-8738-7a369cec9ae7",
+      "name": "Sticky Note19"
+    },
+    {
+      "parameters": {
+        "content": "it takes the existing notebook, the failure context, and repairs only the faulty part while preserving almost everything els",
+        "height": 96,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40960,
+        5472
+      ],
+      "id": "c7cce148-182c-4328-8338-46a62f7e9534",
+      "name": "Sticky Note20"
+    },
+    {
+      "parameters": {
+        "content": "Its purpose is to prevent the AI from getting stuck making the same repair over and over again",
+        "height": 96,
+        "width": 352
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40096,
+        5472
+      ],
+      "id": "52515fe8-9ad2-446c-9847-9beb7932d08b",
+      "name": "Sticky Note21"
+    },
+    {
+      "parameters": {
+        "content": "CHECK WEATHER THE NOTEBOOK OUTPUT IS SUCESS OR HAVING ANY EXCETION",
+        "height": 96,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -44992,
+        4960
+      ],
+      "id": "3e586af2-21f2-48a4-a6d8-f3a3c8ee0347",
+      "name": "Sticky Note22"
+    },
+    {
+      "parameters": {
+        "content": "What is the final outcome of this migration?\nAND CHECKS WEATHER THE SELF HEALING THING WAS SUCESSFULL OR NOT , LIKE COLLECTS THE STATUS",
+        "height": 112,
+        "width": 432
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -42016,
+        4656
+      ],
+      "id": "a7806ea3-b68e-4ad6-be2c-3338ca35cf32",
+      "name": "Sticky Note23"
+    },
+    {
+      "parameters": {
+        "content": "CALL THE FAST API LOGIC THAT IS RESPONSIBL EFOR TH EVAILIDATION THE TABLES IN SEOEARTE PLATFORMS",
+        "width": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -41392,
+        4608
+      ],
+      "id": "54f96f64-6194-40c2-8ed9-364dfd009949",
+      "name": "Sticky Note24"
+    },
+    {
+      "parameters": {
+        "content": "DECIDE WEATHER THE API THAT WAS CALLED , WORKKED PROPERLY",
+        "height": 96,
+        "width": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40704,
+        4672
+      ],
+      "id": "e2f9ef5c-c483-4499-affd-a0bd6fcb3b46",
+      "name": "Sticky Note25"
+    },
+    {
+      "parameters": {
+        "content": "THIS DECIDES WEATHER BOTH THE TABLES WERE SAME?",
+        "height": 96,
+        "width": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40128,
+        4480
+      ],
+      "id": "533adf31-02c2-49ca-bbce-8d33d621638a",
+      "name": "Sticky Note26"
+    },
+    {
+      "parameters": {
+        "content": "is the bridge between your Table Comparison Engine and your Self-Healing Agent.",
+        "height": 112,
+        "width": 224
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40368,
+        5024
+      ],
+      "id": "d1303b32-c065-4835-9a59-2946422cb6ca",
+      "name": "Sticky Note27"
+    },
+    {
+      "parameters": {
+        "content": "IF THE TABLES ARE NOT SAME, DECIDE WEATHER THE LOGIS SHALL BE REPHRASED",
+        "height": 96,
+        "width": 320
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -39552,
+        5072
+      ],
+      "id": "6a7e1470-d82a-49c7-99c3-7f6898ea6955",
+      "name": "Sticky Note28"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Compare Needed?": {
+      "main": [
+        [
+          {
+            "node": "Call Table Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Table Compare": {
+      "main": [
+        [
+          {
+            "node": "Carry State After Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry State After Compare": {
+      "main": [
+        [
+          {
+            "node": "Compare Call Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Call Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Compare Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Table Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Passed?": {
+      "main": [
+        [
+          {
+            "node": "Finalize Table Validation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Table Validation Repair",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Table Validation Repair": {
+      "main": [
+        [
+          {
+            "node": "Table Validation Cap Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Table Validation Cap Check": {
+      "main": [
+        [
+          {
+            "node": "Build Repair Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize Table Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "On form submission1": {
+      "main": [
+        [
+          {
+            "node": "Extract YXMD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract YXMD": {
+      "main": [
+        [
+          {
+            "node": "Parser - Canonical IR1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parser - Canonical IR1": {
+      "main": [
+        [
+          {
+            "node": "Workflow Understanding Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Understanding Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Enriched IR1": {
+      "main": [
+        [
+          {
+            "node": "Migration Architect Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Migration Architect Agent1": {
+      "main": [
+        [
+          {
+            "node": "Parse Migration Blueprint1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Migration Blueprint1": {
+      "main": [
+        [
+          {
+            "node": "Code Generator (validation_notebook)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code Generator (validation_notebook)": {
+      "main": [
+        [
+          {
+            "node": "Clean Generated Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Generated Code": {
+      "main": [
+        [
+          {
+            "node": "Static Validator1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static Validator1": {
+      "main": [
+        [
+          {
+            "node": "Static Passed?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static Passed?1": {
+      "main": [
+        [
+          {
+            "node": "Needs Fidelity Check?1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Static Error Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Fidelity Check?1": {
+      "main": [
+        [
+          {
+            "node": "Fidelity Auditor Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Base64 Encode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fidelity Auditor Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Fidelity Audit1": {
+      "main": [
+        [
+          {
+            "node": "Fidelity Gate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fidelity Gate1": {
+      "main": [
+        [
+          {
+            "node": "Base64 Encode",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Fidelity Repair1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Fidelity Repair1": {
+      "main": [
+        [
+          {
+            "node": "Loop controller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Static Error Context1": {
+      "main": [
+        [
+          {
+            "node": "Loop controller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Force Upload At Cap1": {
+      "main": [
+        [
+          {
+            "node": "Base64 Encode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 Encode": {
+      "main": [
+        [
+          {
+            "node": "Upload validation_notebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload validation_notebook": {
+      "main": [
+        [
+          {
+            "node": "Carry State After Upload1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry State After Upload1": {
+      "main": [
+        [
+          {
+            "node": "Run Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Job": {
+      "main": [
+        [
+          {
+            "node": "Carry State After Run1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry State After Run1": {
+      "main": [
+        [
+          {
+            "node": "Increment Attempt[COUNTER]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attempt < 9 ?": {
+      "main": [
+        [
+          {
+            "node": "Wait 8 sec",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set TIMEOUT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 8 sec": {
+      "main": [
+        [
+          {
+            "node": "Get Run Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Run Status": {
+      "main": [
+        [
+          {
+            "node": "Carry State After Poll1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry State After Poll1": {
+      "main": [
+        [
+          {
+            "node": "Job Finished?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Finished?": {
+      "main": [
+        [
+          {
+            "node": "Get Notebook Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Attempt[COUNTER]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notebook Output": {
+      "main": [
+        [
+          {
+            "node": "Carry State After Output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carry State After Output1": {
+      "main": [
+        [
+          {
+            "node": "Parse Notebook Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Notebook Result": {
+      "main": [
+        [
+          {
+            "node": "SUCCESS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SUCCESS?": {
+      "main": [
+        [
+          {
+            "node": "Build Final Report1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Context": {
+      "main": [
+        [
+          {
+            "node": "Error Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Classifier Output": {
+      "main": [
+        [
+          {
+            "node": "Insert Error History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Error History": {
+      "main": [
+        [
+          {
+            "node": "Get Error History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Error History": {
+      "main": [
+        [
+          {
+            "node": "Pack Error Memory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pack Error Memory": {
+      "main": [
+        [
+          {
+            "node": "Retry Governor1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Governor1": {
+      "main": [
+        [
+          {
+            "node": "Should Retry?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Retry?1": {
+      "main": [
+        [
+          {
+            "node": "Build Repair Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Final Report1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Repair Context": {
+      "main": [
+        [
+          {
+            "node": "Self-Healing Fix",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Self-Healing Fix": {
+      "main": [
+        [
+          {
+            "node": "Clean Repaired Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Repaired Code": {
+      "main": [
+        [
+          {
+            "node": "Check Fix Novelty1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fix Novelty1": {
+      "main": [
+        [
+          {
+            "node": "Novel Fix?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Novel Fix?1": {
+      "main": [
+        [
+          {
+            "node": "Static Validator1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Final Report1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Final Report1": {
+      "main": [
+        [
+          {
+            "node": "Compare Needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set TIMEOUT": {
+      "main": [
+        [
+          {
+            "node": "Stop on Max Retries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Workflow Understanding Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Migration Architect Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)4": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Code Generator (validation_notebook)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Fidelity Auditor Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)6": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Error Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Understanding)7": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Self-Healing Fix",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Parse Enriched IR1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Parse Fidelity Audit1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop controller": {
+      "main": [
+        [
+          {
+            "node": "Build Repair Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Force Upload At Cap1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Attempt[COUNTER]": {
+      "main": [
+        [
+          {
+            "node": "Attempt < 9 ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Classifier": {
+      "main": [
+        [
+          {
+            "node": "Merge Classifier Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "7d0dd43a-8ebb-4d68-b44e-4e62ff82a0fc",
+  "meta": {
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "T5nPujJVci5TdAOH",
+  "tags": []
+}
